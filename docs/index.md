@@ -5,6 +5,9 @@ hero:
   name: Stagecoach
   text: One login. Every VM. One click.
   tagline: 🚧 Coming soon
+  image:
+    src: /images/stagecoach-icon.svg
+    alt: Stagecoach wagon-wheel logo
   actions:
     - theme: brand
       text: View on GitHub

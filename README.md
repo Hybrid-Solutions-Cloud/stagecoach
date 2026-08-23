@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/public/images/stagecoach-banner.svg" alt="Stagecoach — One login. Every VM. One click." width="640">
+</p>
+
 # Stagecoach
 
 > One login. Every VM. One click.
