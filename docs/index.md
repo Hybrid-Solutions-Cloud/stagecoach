@@ -27,9 +27,3 @@ features:
     title: One click
     details: Sign in once, scan every tenant you belong to, and click any VM to open the right session.
 ---
-
-## Coming soon
-
-The Stagecoach documentation is under construction. Until then, the accepted
-research, architecture, and delivery plan lives in
-[`pmo/plans/stagecoach-design.md`](https://github.com/Hybrid-Solutions-Cloud/stagecoach/blob/main/pmo/plans/stagecoach-design.md).
