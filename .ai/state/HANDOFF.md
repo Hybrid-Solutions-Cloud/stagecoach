@@ -12,3 +12,13 @@ workspace, and the accepted design plan at `pmo/plans/stagecoach-design.md`
 Open items: create the ADO Epic/Feature (AB#), set branch protection on main,
 register the repo in the HCS platform registry, decide Windows-only v1 vs
 macOS tunnel fallback, and confirm the Key Vault secret convention.
+
+## Session 2026-08-23 (later) — VitePress coming-soon site
+
+Added the VitePress site: `docs/.vitepress/config.ts` (base `/stagecoach/`),
+home-layout `docs/index.md` (hero + coming soon), `package.json`
+(`"type": "module"`, vitepress ^1.5.0) with lockfile, and
+`.github/workflows/documentation.yml` mirroring azure-scout's pipeline
+(HCS self-hosted runners, peaceiris gh-pages deploy). Local build verified.
+One-time settings still needed: Pages source → `gh-pages` branch after the
+first deploy run, and note Pages requires a paid plan while the repo is private.
