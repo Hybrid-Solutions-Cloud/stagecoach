@@ -1,0 +1,23 @@
+# Local config — never committed (may hold operator-specific, non-secret settings)
+config/variables.yml
+*.local.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+!.vscode/extensions.json
+
+# Node (build-time only, if ever introduced — deliberate decision required)
+node_modules/
+dist/
+
+# Logs and test output
+*.log
+TestResults/
+coverage/
+
+# PowerShell module output
+out/
+*.nupkg
