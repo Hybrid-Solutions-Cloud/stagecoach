@@ -3,8 +3,10 @@
 > Canonical copy. Originally drafted in `azure-scout` branch `claude/azure-vm-rdp-tool-akli2k`
 > (`pmo/plans/azure-stagecoach-design.md`); this repo is now the home of the plan.
 
-**Status:** Accepted — name approved by the operator; repo bootstrapped
-**Repo:** `Hybrid-Solutions-Cloud/stagecoach`
+**Status:** Accepted — repo live, brand and docs pipeline in place, onboarding in progress
+**Repo:** `Hybrid-Solutions-Cloud/stagecoach` (private)
+**ADO project:** `HCS - Stagecoach` (created 2026-08-23, Agile process)
+**Docs site:** <https://labs.hybridsolutions.cloud/stagecoach/> once Pages is enabled
 **Author:** drafted by Claude Code for Kristopher Turner, 2026-08-23
 **Work item:** _to be created (AB# pending)_
 
@@ -350,7 +352,39 @@ makes these first-class managed background processes instead:
   Basic SKU bastion, agent offline, powered off) — honesty over silence,
   the azure-scout house rule.
 
-## 5. Delivery plan
+## 5. Delivery status ledger (2026-08-23)
+
+| Item | State |
+|---|---|
+| Repo `Hybrid-Solutions-Cloud/stagecoach` | ✅ Created (private per governance default), scaffolded: README, REPO-INTENT, AGENTS/CLAUDE, MIT LICENSE, `.ai/` workspace, this plan |
+| Name & tagline | ✅ `stagecoach` · "One login. Every VM. One click." |
+| Brand | ✅ Wagon-wheel mark (spokes = routes to VMs; ink ground, rust hub, rust rim accent) — `docs/public/images/stagecoach-icon.svg` (favicon + nav logo + hero) and `stagecoach-banner.svg` (README wordmark) |
+| Docs site | ✅ VitePress coming-soon landing page; base `/stagecoach/`; publishes to the `gh-pages` branch via `.github/workflows/documentation.yml`; served at `labs.hybridsolutions.cloud/stagecoach/` through the org Pages custom domain |
+| Docs CI runners | ⚠️ Temporarily `ubuntu-latest` (HCS self-hosted fleet offline); revert to `[self-hosted, linux, x64, hcs]` when the fleet returns |
+| GitHub Pages | ⏳ Enable after first deploy: Settings → Pages → Deploy from branch → `gh-pages`. Note: Pages does not serve private repos on a free org plan — flip the repo public (fleet convention) or confirm plan support |
+| ADO project | ✅ `HCS - Stagecoach` created via ADO REST (`wellFormed`), Agile process, matching the `HCS - <Product>` convention |
+| HCS registry (`master-registry.db`) | ⏳ Row prepared, insert pending — see §5.1 |
+| ADO Epic/Feature (AB#) | ⏳ Not yet created — needed before implementation commits |
+| Research spikes & ADRs | ⏳ Requested; to be authored under `pmo/research/` and `docs/design/decisions/` (homestead-foundry format) |
+| Docs About menu (About / Roadmap / Changelog / Releases) | ⏳ Requested; to follow the azure-scout `docs/project/` pattern |
+
+### 5.1 Registry row (ready to insert)
+
+The platform registry is SQLite at `mcp-server/data/master-registry.db` in the
+Platform Engineering repo (the YAML registry is archived). Insert via the
+`scripts/onboarding` tooling or sqlite3:
+
+```sql
+INSERT INTO repos (name, platform, org, local_path, type, validation_profile,
+  default_branch, pilot, standards_scope, docs_platform, company, tenant,
+  status, ado_project, notes)
+VALUES ('stagecoach', 'github', 'Hybrid-Solutions-Cloud',
+  'D:/git/hybrid-solutions-cloud/stagecoach', 'tool', NULL, 'main', 0, NULL,
+  'vitepress', 'HCS Core', NULL, NULL, 'HCS - Stagecoach',
+  'One-click Entra ID-authenticated RDP/SSH launcher for Azure VMs behind Bastion, Arc-enabled servers, and direct-reachable VMs. Created 2026-08-23; ADO project HCS - Stagecoach created the same day.');
+```
+
+## 5.2 Delivery plan
 
 | Phase | Scope | Exit criteria |
 |---|---|---|

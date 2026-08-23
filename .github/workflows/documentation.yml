@@ -24,7 +24,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: [self-hosted, linux, x64, hcs]
+    # GitHub-hosted while the HCS self-hosted fleet is offline; move back to
+    # [self-hosted, linux, x64, hcs] when the runners are available again.
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,7 +55,7 @@ jobs:
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
-    runs-on: [self-hosted, linux, x64, hcs]
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
