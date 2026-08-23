@@ -22,3 +22,16 @@ home-layout `docs/index.md` (hero + coming soon), `package.json`
 (HCS self-hosted runners, peaceiris gh-pages deploy). Local build verified.
 One-time settings still needed: Pages source → `gh-pages` branch after the
 first deploy run, and note Pages requires a paid plan while the repo is private.
+
+## Session 2026-08-23 (later) — site published with About section
+
+Pages is enabled with source "GitHub Actions"; the workflow was converted to
+upload-pages-artifact + deploy-pages (peaceiris/gh-pages flow removed) and
+runs on ubuntu-latest while the HCS runner fleet is offline. Deploys are
+green; the site serves at labs.hybridsolutions.cloud/stagecoach/. The
+landing page dropped its under-construction note, and the top nav gained an
+About dropdown (About / Roadmap / Changelog / Release notes) with a matching
+sidebar under docs/about/. Two stale runs queued on the offline self-hosted
+fleet were cancelled. Still open: registry insert into master-registry.db,
+ADO Epic/Feature (AB#), research spikes + ADRs, revert runners to the HCS
+fleet when it returns.
