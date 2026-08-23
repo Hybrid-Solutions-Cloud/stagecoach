@@ -1,22 +1,32 @@
-# Stagecoach
+---
+layout: home
 
-> One login. Every VM. One click.
+hero:
+  name: Stagecoach
+  text: One login. Every VM. One click.
+  tagline: 🚧 Coming soon
+  actions:
+    - theme: brand
+      text: View on GitHub
+      link: https://github.com/Hybrid-Solutions-Cloud/stagecoach
+    - theme: alt
+      text: Read the plan
+      link: https://github.com/Hybrid-Solutions-Cloud/stagecoach/blob/main/pmo/plans/stagecoach-design.md
 
-## 🚧 Coming soon
+features:
+  - icon: 🏰
+    title: Azure Bastion
+    details: RDP and SSH to VMs behind Bastion with the native client — Entra ID auth and MFA included.
+  - icon: 🌵
+    title: Azure Arc
+    details: RDP over SSH to Arc-enabled servers and Azure Local VMs — no public IPs, no inbound ports.
+  - icon: 🐎
+    title: One click
+    details: Sign in once, scan every tenant you belong to, and click any VM to open the right session.
+---
 
-The Stagecoach documentation site will live here, built with
-[VitePress](https://vitepress.dev/) — the same documentation platform as the
-rest of the Hybrid Solutions Cloud tool fleet.
+## Coming soon
 
-Until then:
-
-- **What Stagecoach is:** see [`REPO-INTENT.md`](../REPO-INTENT.md)
-- **The full research, architecture, and delivery plan:**
-  [`pmo/plans/stagecoach-design.md`](../pmo/plans/stagecoach-design.md)
-
-## What's coming
-
-- Getting started — install, prerequisites, first sign-in
-- Connection guides — Bastion RDP/SSH, Arc RDP-over-SSH, direct sessions
-- Credential resolution — Entra Windows LAPS and Key Vault setup
-- Reference — the `AzureStagecoach` PowerShell module cmdlets
+The Stagecoach documentation is under construction. Until then, the accepted
+research, architecture, and delivery plan lives in
+[`pmo/plans/stagecoach-design.md`](https://github.com/Hybrid-Solutions-Cloud/stagecoach/blob/main/pmo/plans/stagecoach-design.md).

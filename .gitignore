@@ -21,3 +21,7 @@ coverage/
 # PowerShell module output
 out/
 *.nupkg
+
+# VitePress
+docs/.vitepress/dist/
+docs/.vitepress/cache/
