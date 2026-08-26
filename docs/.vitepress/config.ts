@@ -15,18 +15,58 @@ export default defineConfig({
 
     nav: [
       { text: 'Home', link: '/' },
+      { text: 'Guide', link: '/guide/quickstart' },
+      { text: 'Architecture', link: '/guide/architecture' },
+      { text: 'Cmdlets', link: '/reference/cmdlets' },
       {
         text: 'About',
         items: [
           { text: 'About Stagecoach', link: '/about/' },
           { text: 'Roadmap', link: '/about/roadmap' },
           { text: 'Changelog', link: '/about/changelog' },
-          { text: 'Release notes', link: '/about/releases' },
+          { text: 'Release Notes', link: '/about/releases' },
         ],
       },
     ],
 
     sidebar: {
+      '/guide/': [
+        {
+          text: 'Getting Started',
+          items: [
+            { text: 'Quickstart', link: '/guide/quickstart' },
+            { text: 'Architecture', link: '/guide/architecture' },
+            { text: 'Connection Routes', link: '/guide/connections' },
+            { text: 'Credential Resolver', link: '/guide/credentials' },
+          ],
+        },
+        {
+          text: 'Architecture Decisions (ADRs)',
+          items: [
+            { text: 'ADR-001: Pode Backend', link: '/design/decisions/ADR-001-local-first-pode-backend' },
+            { text: 'ADR-002: Credential Hierarchy', link: '/design/decisions/ADR-002-credential-resolution-hierarchy' },
+            { text: 'ADR-003: Session Lifecycle', link: '/design/decisions/ADR-003-background-session-lifecycle' },
+          ],
+        },
+      ],
+      '/reference/': [
+        {
+          text: 'Reference',
+          items: [
+            { text: 'Cmdlets', link: '/reference/cmdlets' },
+          ],
+        },
+      ],
+      '/design/': [
+        {
+          text: 'Architecture Decisions (ADRs)',
+          items: [
+            { text: 'ADR-001: Pode Backend', link: '/design/decisions/ADR-001-local-first-pode-backend' },
+            { text: 'ADR-002: Credential Hierarchy', link: '/design/decisions/ADR-002-credential-resolution-hierarchy' },
+            { text: 'ADR-003: Session Lifecycle', link: '/design/decisions/ADR-003-background-session-lifecycle' },
+          ],
+        },
+      ],
       '/about/': [
         {
           text: 'About',
@@ -34,7 +74,7 @@ export default defineConfig({
             { text: 'About Stagecoach', link: '/about/' },
             { text: 'Roadmap', link: '/about/roadmap' },
             { text: 'Changelog', link: '/about/changelog' },
-            { text: 'Release notes', link: '/about/releases' },
+            { text: 'Release Notes', link: '/about/releases' },
           ],
         },
       ],

@@ -1,19 +1,18 @@
 # Changelog
 
-All notable changes to Stagecoach are recorded here. The format follows
-[Keep a Changelog](https://keepachangelog.com/), and versions follow
-[Semantic Versioning](https://semver.org/).
+All notable changes to Stagecoach will be documented in this file.
 
-## [Unreleased]
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [0.1.0] - 2026-08-26
 
 ### Added
-
-- Accepted research, architecture, and delivery plan.
-- Repository scaffold: agent context files, AI workspace, MIT license.
-- Brand: wagon-wheel mark, banner wordmark, and the tagline
-  *One login. Every VM. One click.*
-- Documentation site (VitePress) with automated GitHub Pages deployment.
-- About, roadmap, changelog, and release notes pages.
-
-*Product code lands with Phase 1; the first tagged release will appear here
-as `0.x` when the core module is usable.*
+- **PowerShell Module:** `AzureStagecoach` PS7 module with `Get-StagecoachInventory`, `Get-StagecoachCredential`, `Connect-StagecoachVM`, and `Start-Stagecoach`.
+- **Local Web Server:** Zero-dependency .NET `HttpListener` localhost server hosted on `127.0.0.1:8085`.
+- **Single-File React UI:** Vendored React 18 + `htm` single-file frontend (`stagecoach.html`) with estate grid, Domain vs Workgroup badges, and slide-over connection drawer.
+- **Credential Resolver:** Multi-tier secret lookup supporting Entra Windows LAPS, Active Directory Domain accounts, and Key Vault conventions.
+- **Design Documentation:** Master implementation plan, research spikes (`SPIKE-001`, `SPIKE-002`), and ADRs (`ADR-001`, `ADR-002`, `ADR-003`).
+- **Automated Tests:** Pester 6 unit test suites and PSScriptAnalyzer rules.

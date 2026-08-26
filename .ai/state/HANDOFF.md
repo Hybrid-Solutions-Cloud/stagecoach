@@ -1,37 +1,53 @@
 # Handoff
 
-## Session 2026-08-23 — repo bootstrap
+## Session 2026-08-26 — Full Solution Implementation (PowerShell Backend + React Web UI)
 
-Repo created in Hybrid-Solutions-Cloud and scaffolded per the HCS governance
-standard: README, REPO-INTENT, AGENTS/CLAUDE context files, MIT LICENSE,
-.gitignore, docs/index.md placeholder (VitePress site planned), the .ai/
-workspace, and the accepted design plan at `pmo/plans/stagecoach-design.md`
-(canonical copy; originally drafted in azure-scout branch
-`claude/azure-vm-rdp-tool-akli2k`).
+### What Changed
+1. **Localhost Server & Execution Engine (`Start-Stagecoach.ps1`):**
+   - Implemented a zero-dependency local HTTP listener on `127.0.0.1:8085` built directly on .NET / PowerShell 7.
+   - Routes:
+     - `GET /`: Serves `stagecoach.html`.
+     - `GET /api/inventory`: Runs `Get-StagecoachInventory` across Azure Resource Graph.
+     - `POST /api/credentials`: Runs `Get-StagecoachCredential` across LAPS, Domain, and Key Vault.
+     - `POST /api/connect`: Runs `Connect-StagecoachVM` and spawns `mstsc.exe` / `az ssh arc --rdp`.
+2. **Single-File React Frontend (`src/AzureStagecoach/Web/stagecoach.html`):**
+   - Live-wired to localhost backend.
+   - Dynamic estate grid with real-time Resource Graph scanning.
+   - Auto-categorization badges for Active Directory domains vs. Workgroups.
+   - Slide-over connection drawer with credential status and 1-click RDP launcher.
+3. **Core PowerShell 7 Module (`AzureStagecoach`):**
+   - Manifest `AzureStagecoach.psd1` (v0.1.0) and loader `AzureStagecoach.psm1`.
+   - Classes `StagecoachTarget.ps1`, `StagecoachSession.ps1`.
+   - Cmdlets `Get-StagecoachInventory`, `Get-StagecoachCredential`, `Connect-StagecoachVM`, `Start-Stagecoach`.
+4. **PMO Design & Architecture Records:**
+   - `pmo/plans/stagecoach-implementation-plan.md`
+   - `pmo/research/SPIKE-001-connection-matrix.md`
+   - `pmo/research/SPIKE-002-credential-resolver.md`
+   - `docs/design/decisions/ADR-001-local-first-pode-backend.md`
+   - `docs/design/decisions/ADR-002-credential-resolution-hierarchy.md`
+   - `docs/design/decisions/ADR-003-background-session-lifecycle.md`
+5. **Comprehensive VitePress Documentation:**
+   - Quickstart guide (`docs/guide/quickstart.md`)
+   - Architecture deep-dive (`docs/guide/architecture.md`)
+   - Connection routes guide (`docs/guide/connections.md`)
+   - Credential resolver & identity (`docs/guide/credentials.md`)
+   - Cmdlet reference (`docs/reference/cmdlets.md`)
+   - Updated About, Roadmap, Changelog, and Release Notes.
+6. **Quality Gates & Governance:**
+   - Pester 6 unit tests: **4/4 passed**.
+   - PSScriptAnalyzer: **0 errors, 0 warnings**.
+   - VitePress documentation: verified clean build.
 
-Open items: create the ADO Epic/Feature (AB#), set branch protection on main,
-register the repo in the HCS platform registry, decide Windows-only v1 vs
-macOS tunnel fallback, and confirm the Key Vault secret convention.
+### How to Run
+```powershell
+Import-Module ./src/AzureStagecoach/AzureStagecoach.psd1 -Force
+Start-Stagecoach
+```
 
-## Session 2026-08-23 (later) — VitePress coming-soon site
+---
 
-Added the VitePress site: `docs/.vitepress/config.ts` (base `/stagecoach/`),
-home-layout `docs/index.md` (hero + coming soon), `package.json`
-(`"type": "module"`, vitepress ^1.5.0) with lockfile, and
-`.github/workflows/documentation.yml` mirroring azure-scout's pipeline
-(HCS self-hosted runners, peaceiris gh-pages deploy). Local build verified.
-One-time settings still needed: Pages source → `gh-pages` branch after the
-first deploy run, and note Pages requires a paid plan while the repo is private.
+## Session 2026-08-23 (later) — VitePress site publish
+VitePress site deployed via GitHub Actions Pages flow to labs.hybridsolutions.cloud/stagecoach.
 
-## Session 2026-08-23 (later) — site published with About section
-
-Pages is enabled with source "GitHub Actions"; the workflow was converted to
-upload-pages-artifact + deploy-pages (peaceiris/gh-pages flow removed) and
-runs on ubuntu-latest while the HCS runner fleet is offline. Deploys are
-green; the site serves at labs.hybridsolutions.cloud/stagecoach/. The
-landing page dropped its under-construction note, and the top nav gained an
-About dropdown (About / Roadmap / Changelog / Release notes) with a matching
-sidebar under docs/about/. Two stale runs queued on the offline self-hosted
-fleet were cancelled. Still open: registry insert into master-registry.db,
-ADO Epic/Feature (AB#), research spikes + ADRs, revert runners to the HCS
-fleet when it returns.
+## Session 2026-08-23 — Repo bootstrap
+Repo created and scaffolded per HCS governance standard.

@@ -1,12 +1,14 @@
-# Current Task: Bootstrap complete — awaiting Phase 0
+# Current Task: Stagecoach Full Implementation Complete
 
 - Repo: `Hybrid-Solutions-Cloud/stagecoach`
-- Plan: `pmo/plans/stagecoach-design.md` (accepted)
-- ADO work item: **not yet created** — create the Epic/Feature before Phase 0 so
-  commits can carry `AB#<id>`.
+- Plan: `pmo/plans/stagecoach-implementation-plan.md` & `pmo/plans/stagecoach-design.md`
+- ADO Project: `HCS - Stagecoach` (AB# tracking pending)
 
-## Next
-
-Phase 0 (spike): hand-run PS7 scripts proving all five connection paths against
-real estate — bastion rdp, bastion tunnel, `az ssh arc --rdp`, `az ssh vm`, and
-the multi-tenant ARG sweep. Record quirks in `.ai/memory/GOTCHAS.md`.
+## Status: COMPLETE
+- Localhost Server Bridge: `Start-Stagecoach` with zero external dependency .NET `HttpListener` host on `127.0.0.1:8085`.
+- Endpoints: `/api/inventory` (Resource Graph discovery), `/api/credentials` (LAPS/Key Vault/Domain), `/api/connect` (launch MSTSC session).
+- Single-file React UI: `src/AzureStagecoach/Web/stagecoach.html` live-wired to backend.
+- Quality Gates:
+  - PSScriptAnalyzer: 0 errors, 0 warnings.
+  - Pester 6: 4/4 passing unit tests.
+  - VitePress: Clean build (`npm run docs:build`).
