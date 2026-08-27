@@ -23,7 +23,8 @@
         PSData = @{
             Tags = @('Azure', 'Arc', 'Bastion', 'RDP', 'SSH', 'Stagecoach')
             ProjectUri = 'https://labs.hybridsolutions.cloud/stagecoach/'
+            LicenseUri = 'https://github.com/Hybrid-Solutions-Cloud/stagecoach/blob/main/LICENSE'
+            ReleaseNotes = 'Initial release of Stagecoach: one-click RDP/SSH launcher for Azure VMs behind Bastion, Azure Arc-enabled servers (Domain and Workgroup), and direct-reachable VMs.'
         }
     }
 }
-
