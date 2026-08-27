@@ -23,3 +23,4 @@ $shortcut.Description = "Stagecoach — Desktop Command Center for Azure & Arc V
 $shortcut.Save()
 
 Write-Host "[Stagecoach] Shortcut created successfully on Desktop: $desktopShortcutPath" -ForegroundColor Green
+

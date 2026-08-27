@@ -377,15 +377,42 @@
                   <div class="card">
                     <div class="card-header">
                       <span>Connected Microsoft Entra Accounts</span>
-                      <button class="btn" onClick=${syncEstate} disabled=${syncing}>Sync All Tenants</button>
+                      <div style=${{display: 'flex', gap: '0.75rem'}}>
+                        <button class="btn" style=${{background: '#2563eb'}} onClick=${async () => {
+                          const upn = prompt('Enter Entra ID Email / UPN hint (optional):');
+                          setStatusMsg('Opening Microsoft sign-in...');
+                          try {
+                            await fetch('/api/auth/login', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ Username: upn })
+                            });
+                            await loadIdentities();
+                            setStatusMsg('Account connected successfully! Click Sync to fetch VMs.');
+                          } catch (e) {
+                            alert('Sign in failed: ' + e.message);
+                          }
+                        }}>+ Add Microsoft Account</button>
+                        <button class="btn" onClick=${syncEstate} disabled=${syncing}>↻ Sync All Tenants</button>
+                      </div>
                     </div>
                     ${identities.length === 0 ? html`
-                      <p style=${{color: 'var(--text-muted)', fontSize: '0.85rem'}}>No active az CLI session detected. Run <code>az login</code> in PowerShell.</p>
+                      <div style=${{padding: '2rem', textAlign: 'center', color: 'var(--text-muted)'}}>
+                        <p style=${{marginBottom: '1rem'}}>No active Microsoft Entra account connected.</p>
+                        <button class="btn" style=${{background: '#2563eb'}} onClick=${async () => {
+                          setStatusMsg('Opening Microsoft sign-in...');
+                          await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                          await loadIdentities();
+                        }}>Sign in with Microsoft</button>
+                      </div>
                     ` : identities.map(id => html`
-                      <div key=${id.AccountName} style=${{marginBottom: '1rem', padding: '1rem', background: 'var(--bg-dark)', borderRadius: '6px'}}>
-                        <div style=${{fontWeight: '700', color: 'var(--accent)', marginBottom: '0.5rem'}}>👤 ${id.AccountName}</div>
-                        <div style=${{fontSize: '0.8rem', color: 'var(--text-muted)'}}>
-                          Accessible Tenants: ${id.Tenants ? id.Tenants.length : 1}
+                      <div key=${id.AccountName} style=${{marginBottom: '1rem', padding: '1rem', background: 'var(--bg-dark)', borderRadius: '6px', border: '1px solid var(--border-card)'}}>
+                        <div style=${{fontWeight: '700', color: 'var(--accent)', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                          <span>👤 ${id.AccountName}</span>
+                          <span class="badge badge-ad">Connected</span>
+                        </div>
+                        <div style=${{fontSize: '0.85rem', color: 'var(--text-muted)'}}>
+                          Accessible Tenants: <strong>${id.Tenants ? id.Tenants.length : 1}</strong>
                         </div>
                       </div>
                     `)}

@@ -42,3 +42,4 @@ if (Test-Path $edgePath) {
 else {
     Start-Process $url
 }
+

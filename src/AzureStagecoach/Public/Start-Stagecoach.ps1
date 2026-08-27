@@ -120,6 +120,42 @@ function Start-Stagecoach {
                 continue
             }
 
+            # Route: POST /api/auth/login (Interactive Entra Login via az)
+            if ($rawPath -eq '/api/auth/login' -and $request.HttpMethod -eq 'POST') {
+                try {
+                    $reader = [System.IO.StreamReader]::new($request.InputStream, $request.ContentEncoding)
+                    $body = $reader.ReadToEnd()
+                    $loginReq = if ($body) { $body | ConvertFrom-Json } else { $null }
+
+                    $argsList = @('login')
+                    if ($loginReq -and $loginReq.TenantId) {
+                        $argsList += @('--tenant', $loginReq.TenantId)
+                    }
+                    if ($loginReq -and $loginReq.Username) {
+                        $argsList += @('--username', $loginReq.Username)
+                    }
+
+                    Start-Process -FilePath 'az' -ArgumentList ($argsList -join ' ') -Wait
+
+                    $rawAccounts = az account list -o json 2>$null | ConvertFrom-Json
+                    $json = @{ status = 'Success'; accounts = $rawAccounts } | ConvertTo-Json -Depth 5
+                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $response.ContentType = 'application/json; charset=utf-8'
+                    $response.ContentLength64 = $bytes.Length
+                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                }
+                catch {
+                    $errObj = @{ error = $_.Exception.Message } | ConvertTo-Json
+                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($errObj)
+                    $response.StatusCode = 500
+                    $response.ContentType = 'application/json'
+                    $response.ContentLength64 = $bytes.Length
+                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                }
+                $response.Close()
+                continue
+            }
+
             # Route: GET /api/inventory (Get Cached Inventory)
             if ($rawPath -eq '/api/inventory' -and $request.HttpMethod -eq 'GET') {
                 try {
