@@ -1,0 +1,12 @@
+D:\git\hybrid-solutions-cloud\stagecoach\src\Stagecoach.Core\bin\Debug\net9.0\Stagecoach.Core.deps.json
+D:\git\hybrid-solutions-cloud\stagecoach\src\Stagecoach.Core\bin\Debug\net9.0\Stagecoach.Core.dll
+D:\git\hybrid-solutions-cloud\stagecoach\src\Stagecoach.Core\bin\Debug\net9.0\Stagecoach.Core.pdb
+D:\git\hybrid-solutions-cloud\stagecoach\src\Stagecoach.Core\obj\Debug\net9.0\Stagecoach.Core.GeneratedMSBuildEditorConfig.editorconfig
+D:\git\hybrid-solutions-cloud\stagecoach\src\Stagecoach.Core\obj\Debug\net9.0\Stagecoach.Core.AssemblyInfoInputs.cache
+D:\git\hybrid-solutions-cloud\stagecoach\src\Stagecoach.Core\obj\Debug\net9.0\Stagecoach.Core.AssemblyInfo.cs
+D:\git\hybrid-solutions-cloud\stagecoach\src\Stagecoach.Core\obj\Debug\net9.0\Stagecoach.Core.csproj.CoreCompileInputs.cache
+D:\git\hybrid-solutions-cloud\stagecoach\src\Stagecoach.Core\obj\Debug\net9.0\Stagecoach.Core.sourcelink.json
+D:\git\hybrid-solutions-cloud\stagecoach\src\Stagecoach.Core\obj\Debug\net9.0\Stagecoach.Core.dll
+D:\git\hybrid-solutions-cloud\stagecoach\src\Stagecoach.Core\obj\Debug\net9.0\refint\Stagecoach.Core.dll
+D:\git\hybrid-solutions-cloud\stagecoach\src\Stagecoach.Core\obj\Debug\net9.0\Stagecoach.Core.pdb
+D:\git\hybrid-solutions-cloud\stagecoach\src\Stagecoach.Core\obj\Debug\net9.0\ref\Stagecoach.Core.dll

@@ -89,13 +89,13 @@ function Start-Stagecoach {
                         $groupedByUser = $rawAccounts | Group-Object -Property { $_.user.name }
                         foreach ($group in $groupedByUser) {
                             $userUpn = $group.Name
-                            $tenants = @($group.Group | Select-Object -Property tenantId, @{N='tenantName';E={$_.name}}, @{N='subscriptionId';E={$_.id}}, isDefault | Group-Object -Property tenantId | ForEach-Object {
-                                [pscustomobject]@{
-                                    TenantId      = $_.Name
-                                    Subscriptions = @($_.Group | Select-Object -Property subscriptionId, tenantName)
-                                    IsDefault     = ($_.Group | Where-Object { $_.isDefault -eq $true }).Count -gt 0
-                                }
-                            })
+                            $tenants = @($group.Group | Select-Object -Property tenantId, @{N = 'tenantName'; E = { $_.name } }, @{N = 'subscriptionId'; E = { $_.id } }, isDefault | Group-Object -Property tenantId | ForEach-Object {
+                                    [pscustomobject]@{
+                                        TenantId      = $_.Name
+                                        Subscriptions = @($_.Group | Select-Object -Property subscriptionId, tenantName)
+                                        IsDefault     = ($_.Group | Where-Object { $_.isDefault -eq $true }).Count -gt 0
+                                    }
+                                })
                             $identities += [pscustomobject]@{
                                 AccountName = $userUpn
                                 Tenants     = $tenants
@@ -103,42 +103,6 @@ function Start-Stagecoach {
                         }
                     }
                     $json = $identities | ConvertTo-Json -Depth 5
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-                    $response.ContentType = 'application/json; charset=utf-8'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                catch {
-                    $errObj = @{ error = $_.Exception.Message } | ConvertTo-Json
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($errObj)
-                    $response.StatusCode = 500
-                    $response.ContentType = 'application/json'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                $response.Close()
-                continue
-            }
-
-            # Route: POST /api/auth/login (Interactive Entra Login via az)
-            if ($rawPath -eq '/api/auth/login' -and $request.HttpMethod -eq 'POST') {
-                try {
-                    $reader = [System.IO.StreamReader]::new($request.InputStream, $request.ContentEncoding)
-                    $body = $reader.ReadToEnd()
-                    $loginReq = if ($body) { $body | ConvertFrom-Json } else { $null }
-
-                    $argsList = @('login')
-                    if ($loginReq -and $loginReq.TenantId) {
-                        $argsList += @('--tenant', $loginReq.TenantId)
-                    }
-                    if ($loginReq -and $loginReq.Username) {
-                        $argsList += @('--username', $loginReq.Username)
-                    }
-
-                    Start-Process -FilePath 'az' -ArgumentList ($argsList -join ' ') -Wait
-
-                    $rawAccounts = az account list -o json 2>$null | ConvertFrom-Json
-                    $json = @{ status = 'Success'; accounts = $rawAccounts } | ConvertTo-Json -Depth 5
                     $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
                     $response.ContentType = 'application/json; charset=utf-8'
                     $response.ContentLength64 = $bytes.Length
@@ -259,7 +223,7 @@ function Start-Stagecoach {
 
                     $vault = if ($saveReq.VaultName) { $saveReq.VaultName } else { 'kv-hcs-vault-01' }
                     $secretName = if ($saveReq.SecretName) { $saveReq.SecretName } else { "vm-$($saveReq.TargetName.ToLowerInvariant())-localadmin" }
-                    
+
                     az keyvault secret set --vault-name $vault --name $secretName --value $saveReq.Password -o none 2>$null
 
                     $json = @{ status = 'Saved'; SecretName = $secretName; Vault = $vault } | ConvertTo-Json
