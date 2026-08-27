@@ -18,6 +18,12 @@ dist/
 TestResults/
 coverage/
 
+# .NET build output
+**/bin/
+**/obj/
+*.user
+*.suo
+
 # PowerShell module output
 out/
 *.nupkg
