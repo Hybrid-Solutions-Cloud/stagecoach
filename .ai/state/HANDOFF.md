@@ -1,53 +1,22 @@
 # Handoff
 
-## Session 2026-08-26 — Full Solution Implementation (PowerShell Backend + React Web UI)
+## Session 2026-08-27 — Stagecoach Desktop Command Center (Vault Prospector Model)
 
 ### What Changed
-1. **Localhost Server & Execution Engine (`Start-Stagecoach.ps1`):**
-   - Implemented a zero-dependency local HTTP listener on `127.0.0.1:8085` built directly on .NET / PowerShell 7.
-   - Routes:
-     - `GET /`: Serves `stagecoach.html`.
-     - `GET /api/inventory`: Runs `Get-StagecoachInventory` across Azure Resource Graph.
-     - `POST /api/credentials`: Runs `Get-StagecoachCredential` across LAPS, Domain, and Key Vault.
-     - `POST /api/connect`: Runs `Connect-StagecoachVM` and spawns `mstsc.exe` / `az ssh arc --rdp`.
-2. **Single-File React Frontend (`src/AzureStagecoach/Web/stagecoach.html`):**
-   - Live-wired to localhost backend.
-   - Dynamic estate grid with real-time Resource Graph scanning.
-   - Auto-categorization badges for Active Directory domains vs. Workgroups.
-   - Slide-over connection drawer with credential status and 1-click RDP launcher.
-3. **Core PowerShell 7 Module (`AzureStagecoach`):**
-   - Manifest `AzureStagecoach.psd1` (v0.1.0) and loader `AzureStagecoach.psm1`.
-   - Classes `StagecoachTarget.ps1`, `StagecoachSession.ps1`.
-   - Cmdlets `Get-StagecoachInventory`, `Get-StagecoachCredential`, `Connect-StagecoachVM`, `Start-Stagecoach`.
-4. **PMO Design & Architecture Records:**
-   - `pmo/plans/stagecoach-implementation-plan.md`
-   - `pmo/research/SPIKE-001-connection-matrix.md`
-   - `pmo/research/SPIKE-002-credential-resolver.md`
-   - `docs/design/decisions/ADR-001-local-first-pode-backend.md`
-   - `docs/design/decisions/ADR-002-credential-resolution-hierarchy.md`
-   - `docs/design/decisions/ADR-003-background-session-lifecycle.md`
-5. **Comprehensive VitePress Documentation:**
-   - Quickstart guide (`docs/guide/quickstart.md`)
-   - Architecture deep-dive (`docs/guide/architecture.md`)
-   - Connection routes guide (`docs/guide/connections.md`)
-   - Credential resolver & identity (`docs/guide/credentials.md`)
-   - Cmdlet reference (`docs/reference/cmdlets.md`)
-   - Updated About, Roadmap, Changelog, and Release Notes.
-6. **Quality Gates & Governance:**
+1. **Desktop Command Center Layout (`src/AzureStagecoach/Web/stagecoach.html`):**
+   - Implemented sidebar navigation with dedicated tabs: **Estate**, **Identities & Sync**, **Sessions & Recents**, and **Settings**.
+   - **Persistent Local Metadata Cache:** Stores discovered VMs, tags, favorites, and recents in persistent storage (`~/.stagecoach/inventory.json` + `localStorage`). When you open the app, your entire fleet is instantly visible without waiting on network queries.
+   - **Favorites & Recents:** Support for pinning favorite VMs (`★`) and instant 1-click reconnecting to recent sessions.
+   - **Multi-Identity Hub:** View logged-in Microsoft Entra accounts, discover accessible tenants, and trigger on-demand background syncs.
+2. **Localhost PowerShell Engine Upgrades (`Start-Stagecoach.ps1`, `Save-StagecoachInventory.ps1`):**
+   - `GET /api/identities`: Returns grouped Entra accounts and tenant memberships.
+   - `GET /api/inventory`: Instantly returns cached inventory from disk.
+   - `POST /api/sync`: Queries Azure Resource Graph in the background, updates local cache, and returns fresh machines.
+   - `POST /api/credentials/save`: Opt-in writeback to Azure Key Vault (`kv-hcs-vault-01`).
+   - `GET /api/sessions`: Returns active background relay and tunnel helpers.
+3. **PMO Design & ADR:**
+   - Created `docs/design/decisions/ADR-004-persistent-metadata-cache-and-identity-hub.md`.
+4. **Verification & Quality Gates:**
    - Pester 6 unit tests: **4/4 passed**.
    - PSScriptAnalyzer: **0 errors, 0 warnings**.
-   - VitePress documentation: verified clean build.
-
-### How to Run
-```powershell
-Import-Module ./src/AzureStagecoach/AzureStagecoach.psd1 -Force
-Start-Stagecoach
-```
-
----
-
-## Session 2026-08-23 (later) — VitePress site publish
-VitePress site deployed via GitHub Actions Pages flow to labs.hybridsolutions.cloud/stagecoach.
-
-## Session 2026-08-23 — Repo bootstrap
-Repo created and scaffolded per HCS governance standard.
+   - VitePress documentation: verified clean build (`npm run docs:build`).

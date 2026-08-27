@@ -17,19 +17,19 @@ Describe 'Get-StagecoachInventory' {
             Mock -ModuleName 'AzureStagecoach' -CommandName 'Invoke-ArgQuery' -MockWith {
                 return @(
                     [pscustomobject]@{
-                        id = '/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.HybridCompute/machines/srv-wg'
-                        name = 'srv-wg'
-                        resourceGroup = 'rg1'
+                        id             = '/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.HybridCompute/machines/srv-wg'
+                        name           = 'srv-wg'
+                        resourceGroup  = 'rg1'
                         subscriptionId = 'sub1'
-                        tenantId = 'ten1'
-                        location = 'eastus'
-                        kind = 'ArcServer'
-                        osType = 'Windows'
-                        osName = 'Windows Server 2022'
-                        powerState = 'Connected'
-                        agentStatus = 'Connected'
-                        domainName = 'WORKGROUP'
-                        tags = $null
+                        tenantId       = 'ten1'
+                        location       = 'eastus'
+                        kind           = 'ArcServer'
+                        osType         = 'Windows'
+                        osName         = 'Windows Server 2022'
+                        powerState     = 'Connected'
+                        agentStatus    = 'Connected'
+                        domainName     = 'WORKGROUP'
+                        tags           = $null
                     }
                 )
             }
@@ -44,19 +44,19 @@ Describe 'Get-StagecoachInventory' {
             Mock -ModuleName 'AzureStagecoach' -CommandName 'Invoke-ArgQuery' -MockWith {
                 return @(
                     [pscustomobject]@{
-                        id = '/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.HybridCompute/machines/srv-ad'
-                        name = 'srv-ad'
-                        resourceGroup = 'rg1'
+                        id             = '/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.HybridCompute/machines/srv-ad'
+                        name           = 'srv-ad'
+                        resourceGroup  = 'rg1'
                         subscriptionId = 'sub1'
-                        tenantId = 'ten1'
-                        location = 'eastus'
-                        kind = 'ArcServer'
-                        osType = 'Windows'
-                        osName = 'Windows Server 2025'
-                        powerState = 'Connected'
-                        agentStatus = 'Connected'
-                        domainName = 'CORP.CONTOSO.COM'
-                        tags = $null
+                        tenantId       = 'ten1'
+                        location       = 'eastus'
+                        kind           = 'ArcServer'
+                        osType         = 'Windows'
+                        osName         = 'Windows Server 2025'
+                        powerState     = 'Connected'
+                        agentStatus    = 'Connected'
+                        domainName     = 'CORP.CONTOSO.COM'
+                        tags           = $null
                     }
                 )
             }
