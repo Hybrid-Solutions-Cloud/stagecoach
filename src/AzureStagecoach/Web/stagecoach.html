@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -23,37 +24,208 @@
       --badge-arc: #a855f7;
       --badge-azure: #06b6d4;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    body { background: var(--bg-dark); color: var(--text-main); line-height: 1.5; }
-    header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 2rem; background: var(--bg-card); border-bottom: 1px solid var(--border); }
-    .brand { display: flex; align-items: center; gap: 0.75rem; font-size: 1.25rem; font-weight: 700; color: var(--accent); }
-    .brand svg { width: 32px; height: 32px; fill: currentColor; }
-    .btn { background: var(--accent); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
-    .btn:hover { background: var(--accent-hover); }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .btn-secondary { background: var(--bg-hover); color: var(--text-main); }
-    .btn-secondary:hover { background: #475569; }
-    .container { padding: 2rem; max-width: 1400px; margin: 0 auto; }
-    .toolbar { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
-    .input { background: var(--bg-card); border: 1px solid var(--border); color: white; padding: 0.5rem 1rem; border-radius: 6px; outline: none; }
-    .input:focus { border-color: var(--accent); }
-    table { width: 100%; border-collapse: collapse; background: var(--bg-card); border-radius: 8px; overflow: hidden; }
-    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
-    th { background: #111827; color: var(--text-muted); text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
-    tr:hover { background: var(--bg-hover); }
-    .badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
-    .badge-ad { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid #3b82f6; }
-    .badge-wg { background: rgba(234, 179, 8, 0.2); color: #facc15; border: 1px solid #eab308; }
-    .badge-arc { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid #a855f7; }
-    .badge-azure { background: rgba(6, 182, 212, 0.2); color: #22d3ee; border: 1px solid #06b6d4; }
-    .drawer { position: fixed; right: 0; top: 0; bottom: 0; width: 440px; background: var(--bg-card); border-left: 1px solid var(--border); padding: 2rem; box-shadow: -4px 0 24px rgba(0,0,0,0.5); z-index: 100; transform: translateX(100%); transition: transform 0.3s ease; overflow-y: auto; }
-    .drawer.open { transform: translateX(0); }
-    .drawer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
-    .field { margin-bottom: 1.25rem; }
-    .field label { display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.35rem; }
-    .status-toast { margin-top: 1rem; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem; }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      line-height: 1.5;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 2rem;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .brand svg {
+      width: 32px;
+      height: 32px;
+      fill: currentColor;
+    }
+
+    .btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: var(--bg-hover);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background: #475569;
+    }
+
+    .container {
+      padding: 2rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .input {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    .input:focus {
+      border-color: var(--accent);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--bg-card);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th,
+    td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+    }
+
+    th {
+      background: #111827;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+    }
+
+    tr:hover {
+      background: var(--bg-hover);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .badge-ad {
+      background: rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+      border: 1px solid #3b82f6;
+    }
+
+    .badge-wg {
+      background: rgba(234, 179, 8, 0.2);
+      color: #facc15;
+      border: 1px solid #eab308;
+    }
+
+    .badge-arc {
+      background: rgba(168, 85, 247, 0.2);
+      color: #c084fc;
+      border: 1px solid #a855f7;
+    }
+
+    .badge-azure {
+      background: rgba(6, 182, 212, 0.2);
+      color: #22d3ee;
+      border: 1px solid #06b6d4;
+    }
+
+    .drawer {
+      position: fixed;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 440px;
+      background: var(--bg-card);
+      border-left: 1px solid var(--border);
+      padding: 2rem;
+      box-shadow: -4px 0 24px rgba(0, 0, 0, 0.5);
+      z-index: 100;
+      transform: translateX(100%);
+      transition: transform 0.3s ease;
+      overflow-y: auto;
+    }
+
+    .drawer.open {
+      transform: translateX(0);
+    }
+
+    .drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+    }
+
+    .field {
+      margin-bottom: 1.25rem;
+    }
+
+    .field label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+
+    .status-toast {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
   </style>
 </head>
+
 <body>
   <div id="root"></div>
   <script>
@@ -85,14 +257,9 @@
           setInventory(Array.isArray(data) ? data : [data]);
           setStatusMessage(`Found ${data.length || 1} machines in estate.`);
         } catch (err) {
-          console.warn('Using demo data fallback:', err);
-          setInventory([
-            { Id: '1', Name: 'srv-dc01', Kind: 'ArcServer', ResourceGroup: 'rg-core', OsName: 'Windows Server 2025', DomainName: 'CORP.CONTOSO.COM', DomainType: 'ActiveDirectory', PowerState: 'Connected' },
-            { Id: '2', Name: 'srv-app02', Kind: 'ArcServer', ResourceGroup: 'rg-core', OsName: 'Windows Server 2022', DomainName: 'CORP.CONTOSO.COM', DomainType: 'ActiveDirectory', PowerState: 'Connected' },
-            { Id: '3', Name: 'srv-dmz-box', Kind: 'ArcServer', ResourceGroup: 'rg-dmz', OsName: 'Windows Server 2022', DomainName: 'WORKGROUP', DomainType: 'Workgroup', PowerState: 'Connected' },
-            { Id: '4', Name: 'vm-bastion-hub', Kind: 'AzureVM', ResourceGroup: 'rg-hub', OsName: 'Windows 11', DomainName: 'EntraID', DomainType: 'EntraID', PowerState: 'Running', BastionHostId: '/subscriptions/s/resourceGroups/rg-hub/providers/Microsoft.Network/bastionHosts/bas-hub-01' }
-          ]);
-          setStatusMessage('Loaded inventory view.');
+          console.error('Scan error:', err);
+          setStatusMessage('Scan failed or no connection to Azure backend. Please check az login.');
+          setInventory([]);
         } finally {
           setLoading(false);
         }
@@ -148,7 +315,7 @@
 
       const filtered = inventory.filter(vm => {
         const nameMatch = (vm.Name || vm.name || '').toLowerCase().includes(filterText.toLowerCase()) ||
-                          (vm.DomainName || vm.domainName || '').toLowerCase().includes(filterText.toLowerCase());
+          (vm.DomainName || vm.domainName || '').toLowerCase().includes(filterText.toLowerCase());
         const domType = vm.DomainType || vm.domainType;
         const domainMatch = filterDomain === 'ALL' || domType === filterDomain;
         return nameMatch && domainMatch;
@@ -161,8 +328,8 @@
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
               <span>STAGECOACH</span>
             </div>
-            <div style=${{display: 'flex', gap: '1rem', alignItems: 'center'}}>
-              <span style=${{color: 'var(--text-muted)', fontSize: '0.85rem'}}>${statusMessage}</span>
+            <div style=${{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+              <span style=${{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>${statusMessage}</span>
               <button class="btn" disabled=${loading} onClick=${scanEstate}>
                 ${loading ? 'Scanning...' : 'Scan Estate'}
               </button>
@@ -171,7 +338,7 @@
 
           <main class="container">
             <div class="toolbar">
-              <input class="input" style=${{flex: '1', minWidth: '240px'}} placeholder="Search by VM name or domain..." value=${filterText} onInput=${e => setFilterText(e.target.value)} />
+              <input class="input" style=${{ flex: '1', minWidth: '240px' }} placeholder="Search by VM name or domain..." value=${filterText} onInput=${e => setFilterText(e.target.value)} />
               <select class="input" value=${filterDomain} onChange=${e => setFilterDomain(e.target.value)}>
                 <option value="ALL">All Domain Types</option>
                 <option value="ActiveDirectory">Active Directory</option>
@@ -194,19 +361,19 @@
               <tbody>
                 ${filtered.length === 0 ? html`
                   <tr>
-                    <td colspan="6" style=${{textAlign: 'center', padding: '2rem', color: 'var(--text-muted)'}}>
+                    <td colspan="6" style=${{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                       No machines found. Click "Scan Estate" to query Azure Resource Graph.
                     </td>
                   </tr>
                 ` : filtered.map(item => {
-                  const name = item.Name || item.name;
-                  const kind = item.Kind || item.kind;
-                  const os = item.OsName || item.osName || 'Windows';
-                  const domainName = item.DomainName || item.domainName || '';
-                  const domainType = item.DomainType || item.domainType;
-                  const power = item.PowerState || item.powerState || 'Connected';
+        const name = item.Name || item.name;
+        const kind = item.Kind || item.kind;
+        const os = item.OsName || item.osName || 'Windows';
+        const domainName = item.DomainName || item.domainName || '';
+        const domainType = item.DomainType || item.domainType;
+        const power = item.PowerState || item.powerState || 'Connected';
 
-                  return html`
+        return html`
                     <tr key=${item.Id || item.id || name}>
                       <td><strong>${name}</strong></td>
                       <td>
@@ -220,15 +387,15 @@
                           ${domainName || domainType}
                         </span>
                       </td>
-                      <td><span style=${{color: '#4ade80'}}>● ${power}</span></td>
+                      <td><span style=${{ color: '#4ade80' }}>● ${power}</span></td>
                       <td>
-                        <button class="btn" style=${{padding: '0.35rem 0.75rem', fontSize: '0.8rem'}} onClick=${() => handleSelectTarget(item)}>
+                        <button class="btn" style=${{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} onClick=${() => handleSelectTarget(item)}>
                           Connect
                         </button>
                       </td>
                     </tr>
                   `;
-                })}
+      })}
               </tbody>
             </table>
           </main>
@@ -238,15 +405,15 @@
               <div>
                 <div class="drawer-header">
                   <h3>Connect to ${selectedTarget.Name || selectedTarget.name}</h3>
-                  <button class="btn btn-secondary" style=${{padding: '0.2rem 0.5rem'}} onClick=${() => setSelectedTarget(null)}>✕</button>
+                  <button class="btn btn-secondary" style=${{ padding: '0.2rem 0.5rem' }} onClick=${() => setSelectedTarget(null)}>✕</button>
                 </div>
 
                 <div class="field">
                   <label>Connection Route</label>
-                  <div style=${{fontSize: '0.9rem', color: '#38bdf8', fontWeight: '600'}}>
+                  <div style=${{ fontSize: '0.9rem', color: '#38bdf8', fontWeight: '600' }}>
                     ${(selectedTarget.Kind || selectedTarget.kind) === 'ArcServer'
-                      ? '⚡ Azure Arc SSH Relay (az ssh arc --rdp)'
-                      : (selectedTarget.BastionHostId ? '⚡ Azure Bastion Native Client (az network bastion rdp)' : '⚡ Direct MSTSC')}
+            ? '⚡ Azure Arc SSH Relay (az ssh arc --rdp)'
+            : (selectedTarget.BastionHostId ? '⚡ Azure Bastion Native Client (az network bastion rdp)' : '⚡ Direct MSTSC')}
                   </div>
                 </div>
 
@@ -255,28 +422,28 @@
                   <div>
                     <span class=${(selectedTarget.DomainType || selectedTarget.domainType) === 'ActiveDirectory' ? 'badge badge-ad' : 'badge badge-wg'}>
                       ${(selectedTarget.DomainType || selectedTarget.domainType) === 'ActiveDirectory'
-                        ? 'AD Domain: ' + (selectedTarget.DomainName || selectedTarget.domainName)
-                        : 'Standalone Workgroup'}
+            ? 'AD Domain: ' + (selectedTarget.DomainName || selectedTarget.domainName)
+            : 'Standalone Workgroup'}
                     </span>
                   </div>
                 </div>
 
                 <div class="field">
                   <label>Target Account</label>
-                  <input class="input" style=${{width: '100%'}} value=${targetUser} onInput=${e => setTargetUser(e.target.value)} />
+                  <input class="input" style=${{ width: '100%' }} value=${targetUser} onInput=${e => setTargetUser(e.target.value)} />
                 </div>
 
                 <div class="field">
                   <label>Resolved Credential Status</label>
-                  <div style=${{fontSize: '0.85rem', color: credInfo && credInfo.Source !== 'None' ? '#4ade80' : '#facc15'}}>
+                  <div style=${{ fontSize: '0.85rem', color: credInfo && credInfo.Source !== 'None' ? '#4ade80' : '#facc15' }}>
                     ${credInfo && credInfo.Source !== 'None'
-                      ? `✓ Resolved via ${credInfo.Source} (${credInfo.Username || targetUser})`
-                      : 'ℹ Standard authentication prompt / Operator session'}
+            ? `✓ Resolved via ${credInfo.Source} (${credInfo.Username || targetUser})`
+            : 'ℹ Standard authentication prompt / Operator session'}
                   </div>
                 </div>
 
-                <div style=${{marginTop: '2rem', display: 'flex', gap: '0.75rem'}}>
-                  <button class="btn" style=${{flex: '1'}} disabled=${connecting} onClick=${handleConnect}>
+                <div style=${{ marginTop: '2rem', display: 'flex', gap: '0.75rem' }}>
+                  <button class="btn" style=${{ flex: '1' }} disabled=${connecting} onClick=${handleConnect}>
                     ${connecting ? 'Launching Remote Desktop...' : 'Launch 1-Click RDP'}
                   </button>
                 </div>
@@ -290,5 +457,5 @@
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
   </script>
 </body>
-</html>
 
+</html>
