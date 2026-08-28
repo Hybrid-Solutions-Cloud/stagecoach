@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Stagecoach.Core")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a31e0bc24d0ea54d164b96daa719e4d8cb39805d")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2a9764291e9704ad62277875e9f9a4b454f403ce")]
 [assembly: System.Reflection.AssemblyProductAttribute("Stagecoach.Core")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Stagecoach.Core")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
