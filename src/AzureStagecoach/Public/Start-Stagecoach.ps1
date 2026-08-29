@@ -5,304 +5,205 @@ $ErrorActionPreference = 'Stop'
 function Start-Stagecoach {
     <#
     .SYNOPSIS
-        Starts the local Stagecoach desktop command center web server and opens the interface in the default browser.
+        The Stagecoach front door: sign in once, pick a machine, get a session.
     .DESCRIPTION
-        Starts a lightweight localhost web server on 127.0.0.1 serving stagecoach.html,
-        bridging UI actions to AzureStagecoach PowerShell cmdlets, managing identities, and syncing metadata.
-    .PARAMETER Port
-        The local TCP port to bind (default: 8085).
-    .PARAMETER NoBrowser
-        If specified, prevents automatically opening the default web browser.
+        Interactive console launcher. On start it checks prerequisites (Azure
+        CLI + extensions, offering to install anything missing), signs you in
+        with Entra ID if needed, and loads your machines. Saved logins from
+        previous sessions are listed first for one-keystroke reconnects.
+    .PARAMETER Refresh
+        Re-discover the inventory from Azure before showing the menu.
     .EXAMPLE
         Start-Stagecoach
     #>
-    [CmdletBinding(SupportsShouldProcess = $true)]
+    [CmdletBinding()]
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Interactive console UI — host output is the product.')]
     param(
-        [Parameter(Mandatory = $false)]
-        [int]$Port = 8085,
-
-        [Parameter(Mandatory = $false)]
-        [switch]$NoBrowser
+        [switch]$Refresh
     )
 
-    $uiUrl = "http://127.0.0.1:$Port/"
+    Write-Host ''
+    Write-Host '  ═══════════════════════════════════════════' -ForegroundColor DarkYellow
+    Write-Host '   STAGECOACH — one login, every VM, one pick ' -ForegroundColor Yellow
+    Write-Host '  ═══════════════════════════════════════════' -ForegroundColor DarkYellow
+    Write-Host ''
 
-    if (-not $PSCmdlet.ShouldProcess($uiUrl, 'Start Stagecoach Local Web Server')) {
+    # --- 1. Prerequisites -------------------------------------------------
+    $prereq = Test-StagecoachPrerequisite
+    if (-not $prereq.AzCliPresent) {
+        Write-Host '  Azure CLI is not installed. Get it from https://aka.ms/azure-cli then run Start-Stagecoach again.' -ForegroundColor Red
+        return
+    }
+    if (@($prereq.MissingExtensions).Count -gt 0) {
+        Write-Host "  Missing az CLI extensions: $($prereq.MissingExtensions -join ', ')" -ForegroundColor Yellow
+        $answer = Read-Host '  Install them now? [Y/n]'
+        if ($answer -notmatch '^[nN]') {
+            $prereq = Test-StagecoachPrerequisite -InstallMissing
+        }
+        else {
+            Write-Host '  Stagecoach needs those extensions to discover and connect. Exiting.' -ForegroundColor Red
+            return
+        }
+    }
+
+    # --- 2. Sign-in -------------------------------------------------------
+    if (-not $prereq.LoggedIn) {
+        Write-Host '  No Azure session found — opening Entra ID sign-in...' -ForegroundColor Cyan
+        Connect-StagecoachAccount | Out-Null
+    }
+    else {
+        Write-Host "  Signed in as $($prereq.Account.User)" -ForegroundColor Green
+    }
+
+    # --- 3. Inventory -----------------------------------------------------
+    $inventory = @()
+    if (-not $Refresh) {
+        $inventory = @(Get-StagecoachInventory -Cached)
+    }
+    if ($inventory.Count -eq 0 -or $Refresh) {
+        Write-Host '  Discovering your machines (Azure VMs, Bastion hosts, Arc servers)...' -ForegroundColor Cyan
+        $inventory = @(Get-StagecoachInventory)
+    }
+    Write-Host "  $($inventory.Count) machine(s) available." -ForegroundColor Green
+    Write-Host ''
+
+    # --- 4. Menu loop -----------------------------------------------------
+    while ($true) {
+        $saved = @(Get-StagecoachSavedConnection | Select-Object -First 9)
+
+        if ($saved.Count -gt 0) {
+            Write-Host '  Recent connections:' -ForegroundColor Yellow
+            for ($i = 0; $i -lt $saved.Count; $i++) {
+                $entry = $saved[$i]
+                $user = Get-StagecoachProp -InputObject $entry -Name 'Username' -Default ''
+                $userLabel = if ($user) { " as $user" } else { ' as Entra ID' }
+                Write-Host ("   [{0}] {1}  ({2}, {3}{4})" -f ($i + 1),
+                    (Get-StagecoachProp -InputObject $entry -Name 'TargetName'),
+                    (Get-StagecoachProp -InputObject $entry -Name 'Kind'),
+                    (Get-StagecoachProp -InputObject $entry -Name 'Method'), $userLabel)
+            }
+            Write-Host ''
+        }
+
+        Write-Host '  [1-9] reconnect   [L] list machines   [R] refresh from Azure   [A] add account   [Q] quit' -ForegroundColor DarkGray
+        Write-Host '  ...or type part of a machine name to search.' -ForegroundColor DarkGray
+        $choice = Read-Host '  stagecoach'
+        if ([string]::IsNullOrWhiteSpace($choice)) { continue }
+
+        switch -Regex ($choice.Trim()) {
+            '^[Qq]$' { Write-Host '  Happy trails.' -ForegroundColor DarkYellow; return }
+            '^[Rr]$' {
+                Write-Host '  Refreshing inventory...' -ForegroundColor Cyan
+                $inventory = @(Get-StagecoachInventory)
+                Write-Host "  $($inventory.Count) machine(s)." -ForegroundColor Green
+                continue
+            }
+            '^[Aa]$' {
+                Connect-StagecoachAccount | Format-Table -AutoSize | Out-Host
+                Write-Host '  Refreshing inventory with the new account...' -ForegroundColor Cyan
+                $inventory = @(Get-StagecoachInventory)
+                continue
+            }
+            '^[Ll]$' {
+                Show-StagecoachPicker -Inventory $inventory
+                continue
+            }
+            '^[1-9]$' {
+                $index = [int]$choice - 1
+                if ($index -ge $saved.Count) { Write-Host '  No such entry.' -ForegroundColor Red; continue }
+                $entry = $saved[$index]
+                $targetId = Get-StagecoachProp -InputObject $entry -Name 'TargetId'
+                $target = $inventory | Where-Object { $_.Id -eq $targetId } | Select-Object -First 1
+                if (-not $target) {
+                    Write-Host '  That machine is no longer in the inventory — refresh with [R].' -ForegroundColor Red
+                    continue
+                }
+                $connectArgs = @{
+                    Target = $target
+                    Method = (Get-StagecoachProp -InputObject $entry -Name 'Method' -Default 'Auto')
+                }
+                $user = Get-StagecoachProp -InputObject $entry -Name 'Username' -Default ''
+                if ($user) { $connectArgs.LocalUser = $user }
+                Connect-StagecoachVM @connectArgs | Out-Null
+                continue
+            }
+            default {
+                Show-StagecoachPicker -Inventory $inventory -Filter $choice.Trim()
+                continue
+            }
+        }
+    }
+}
+
+function Show-StagecoachPicker {
+    <#
+    .SYNOPSIS
+        Interactive machine picker: filter, choose, set method/user, connect.
+    #>
+    [CmdletBinding()]
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Interactive console UI — host output is the product.')]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [StagecoachTarget[]]$Inventory,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Filter
+    )
+
+    $list = @($Inventory)
+    if ($Filter) {
+        $list = @($Inventory | Where-Object { $_.Name -like "*$Filter*" })
+    }
+    if ($list.Count -eq 0) {
+        Write-Host "  No machines match '$Filter'." -ForegroundColor Red
         return
     }
 
-    $webPath = Join-Path -Path $PSScriptRoot -ChildPath '..\Web\stagecoach.html'
-    if (-not (Test-Path $webPath)) {
-        throw "Could not locate web UI file at '$webPath'."
+    Write-Host ''
+    for ($i = 0; $i -lt $list.Count; $i++) {
+        $t = $list[$i]
+        $route = if ($t.Kind -eq [StagecoachTargetKind]::ArcServer) { 'Arc relay' }
+        elseif ($t.HasBastion()) { "Bastion: $($t.BastionName)" }
+        elseif ($t.PublicIpAddress -or $t.PrivateIpAddress) { 'Direct' }
+        else { 'No route!' }
+        $os = if ($t.OsType) { $t.OsType } else { '?' }
+        Write-Host ("   [{0,3}] {1,-30} {2,-10} {3,-9} {4}" -f ($i + 1), $t.Name, $t.Kind, $os, $route)
+    }
+    Write-Host ''
+
+    $pick = Read-Host "  Machine number (1-$($list.Count)), or Enter to go back"
+    if ([string]::IsNullOrWhiteSpace($pick) -or $pick -notmatch '^\d+$') { return }
+    $index = [int]$pick - 1
+    if ($index -lt 0 -or $index -ge $list.Count) { Write-Host '  No such entry.' -ForegroundColor Red; return }
+    $target = $list[$index]
+
+    $defaultMethod = if ($target.IsWindows()) { 'Rdp' } else { 'Ssh' }
+    $methodChoice = Read-Host "  Method: [Enter]=$defaultMethod, or rdp / ssh / tunnel"
+    $method = switch -Regex ($methodChoice.Trim()) {
+        '^[Rr]' { 'Rdp'; break }
+        '^[Ss]' { 'Ssh'; break }
+        '^[Tt]' { 'Tunnel'; break }
+        default { $defaultMethod }
     }
 
-    Write-Information "[Stagecoach] Initializing listener on $uiUrl..." -InformationAction Continue
-
-    $listener = [System.Net.HttpListener]::new()
-    $listener.Prefixes.Add($uiUrl)
-    $listener.Start()
-
-    Write-Information "[Stagecoach] Command Center active. Press Ctrl+C in terminal to stop." -InformationAction Continue
-
-    if (-not $NoBrowser) {
-        Start-Process $uiUrl
+    $userPrompt = if ($target.AdminUsername) {
+        "  Username: [Enter]=Entra ID, or a local/domain user (VM admin is '$($target.AdminUsername)')"
     }
+    else {
+        '  Username: [Enter]=Entra ID, or a local/domain user'
+    }
+    $user = Read-Host $userPrompt
 
-    # In-memory session tracking
-    $script:activeSessions = [System.Collections.Generic.Dictionary[string, StagecoachSession]]::new()
+    $connectArgs = @{ Target = $target; Method = $method }
+    if (-not [string]::IsNullOrWhiteSpace($user)) { $connectArgs.LocalUser = $user.Trim() }
 
     try {
-        while ($listener.IsListening) {
-            $context = $listener.GetContext()
-            $request = $context.Request
-            $response = $context.Response
-
-            # Enable CORS for localhost
-            $response.Headers.Add('Access-Control-Allow-Origin', '*')
-            $response.Headers.Add('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
-            $response.Headers.Add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-
-            if ($request.HttpMethod -eq 'OPTIONS') {
-                $response.StatusCode = 204
-                $response.Close()
-                continue
-            }
-
-            $rawPath = $request.Url.AbsolutePath
-
-            # Route: Static UI
-            if ($rawPath -eq '/' -or $rawPath -eq '/index.html' -or $rawPath -eq '/stagecoach.html') {
-                $htmlContent = [System.IO.File]::ReadAllBytes($webPath)
-                $response.ContentType = 'text/html; charset=utf-8'
-                $response.ContentLength64 = $htmlContent.Length
-                $response.OutputStream.Write($htmlContent, 0, $htmlContent.Length)
-                $response.Close()
-                continue
-            }
-
-            # Route: GET /api/identities (List Entra Accounts & Tenants)
-            if ($rawPath -eq '/api/identities' -and $request.HttpMethod -eq 'GET') {
-                try {
-                    $rawAccounts = az account list -o json 2>$null | ConvertFrom-Json
-                    $identities = @()
-                    if ($rawAccounts) {
-                        $groupedByUser = $rawAccounts | Group-Object -Property { $_.user.name }
-                        foreach ($group in $groupedByUser) {
-                            $userUpn = $group.Name
-                            $tenants = @($group.Group | Select-Object -Property tenantId, @{N = 'tenantName'; E = { $_.name } }, @{N = 'subscriptionId'; E = { $_.id } }, isDefault | Group-Object -Property tenantId | ForEach-Object {
-                                    [pscustomobject]@{
-                                        TenantId      = $_.Name
-                                        Subscriptions = @($_.Group | Select-Object -Property subscriptionId, tenantName)
-                                        IsDefault     = ($_.Group | Where-Object { $_.isDefault -eq $true }).Count -gt 0
-                                    }
-                                })
-                            $identities += [pscustomobject]@{
-                                AccountName = $userUpn
-                                Tenants     = $tenants
-                            }
-                        }
-                    }
-                    $json = $identities | ConvertTo-Json -Depth 5
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-                    $response.ContentType = 'application/json; charset=utf-8'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                catch {
-                    $errObj = @{ error = $_.Exception.Message } | ConvertTo-Json
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($errObj)
-                    $response.StatusCode = 500
-                    $response.ContentType = 'application/json'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                $response.Close()
-                continue
-            }
-
-            # Route: GET /api/inventory (Get Cached Inventory)
-            if ($rawPath -eq '/api/inventory' -and $request.HttpMethod -eq 'GET') {
-                try {
-                    $cached = Get-StagecoachCachedInventory
-                    if (-not $cached -or $cached.Count -eq 0) {
-                        $cached = @(Get-StagecoachInventory)
-                        if ($cached.Count -gt 0) {
-                            Save-StagecoachInventory -Targets $cached
-                        }
-                    }
-                    $json = $cached | ConvertTo-Json -Depth 5
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-                    $response.ContentType = 'application/json; charset=utf-8'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                catch {
-                    $errObj = @{ error = $_.Exception.Message } | ConvertTo-Json
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($errObj)
-                    $response.StatusCode = 500
-                    $response.ContentType = 'application/json'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                $response.Close()
-                continue
-            }
-
-            # Route: POST /api/sync (Force Live Sync Across Tenants)
-            if ($rawPath -eq '/api/sync' -and $request.HttpMethod -eq 'POST') {
-                try {
-                    $freshInventory = @(Get-StagecoachInventory)
-                    Save-StagecoachInventory -Targets $freshInventory
-                    $json = $freshInventory | ConvertTo-Json -Depth 5
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-                    $response.ContentType = 'application/json; charset=utf-8'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                catch {
-                    $errObj = @{ error = $_.Exception.Message } | ConvertTo-Json
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($errObj)
-                    $response.StatusCode = 500
-                    $response.ContentType = 'application/json'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                $response.Close()
-                continue
-            }
-
-            # Route: POST /api/credentials (Resolve LAPS / Domain / Key Vault)
-            if ($rawPath -eq '/api/credentials' -and $request.HttpMethod -eq 'POST') {
-                try {
-                    $reader = [System.IO.StreamReader]::new($request.InputStream, $request.ContentEncoding)
-                    $bodyJson = $reader.ReadToEnd()
-                    $targetData = $bodyJson | ConvertFrom-Json
-
-                    $target = [StagecoachTarget]::new()
-                    $target.Id = $targetData.Id
-                    $target.Name = $targetData.Name
-                    $target.ResourceGroup = $targetData.ResourceGroup
-                    $target.SubscriptionId = $targetData.SubscriptionId
-                    $target.Kind = [StagecoachTargetKind]::$($targetData.Kind)
-                    $target.DomainName = $targetData.DomainName
-                    $target.DomainType = [StagecoachDomainType]::$($targetData.DomainType)
-
-                    if ($targetData.Tags) {
-                        foreach ($prop in $targetData.Tags.PSObject.Properties) {
-                            $target.Tags[$prop.Name] = [string]$prop.Value
-                        }
-                    }
-
-                    $cred = Get-StagecoachCredential -Target $target
-                    $result = if ($cred) { $cred } else { @{ Source = 'None'; Username = ''; Password = '' } }
-                    $json = $result | ConvertTo-Json
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-
-                    $response.ContentType = 'application/json; charset=utf-8'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                catch {
-                    $errObj = @{ error = $_.Exception.Message } | ConvertTo-Json
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($errObj)
-                    $response.StatusCode = 500
-                    $response.ContentType = 'application/json'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                $response.Close()
-                continue
-            }
-
-            # Route: POST /api/credentials/save (Write-Back to Key Vault)
-            if ($rawPath -eq '/api/credentials/save' -and $request.HttpMethod -eq 'POST') {
-                try {
-                    $reader = [System.IO.StreamReader]::new($request.InputStream, $request.ContentEncoding)
-                    $bodyJson = $reader.ReadToEnd()
-                    $saveReq = $bodyJson | ConvertFrom-Json
-
-                    $vault = if ($saveReq.VaultName) { $saveReq.VaultName } else { 'kv-hcs-vault-01' }
-                    $secretName = if ($saveReq.SecretName) { $saveReq.SecretName } else { "vm-$($saveReq.TargetName.ToLowerInvariant())-localadmin" }
-
-                    az keyvault secret set --vault-name $vault --name $secretName --value $saveReq.Password -o none 2>$null
-
-                    $json = @{ status = 'Saved'; SecretName = $secretName; Vault = $vault } | ConvertTo-Json
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-                    $response.ContentType = 'application/json; charset=utf-8'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                catch {
-                    $errObj = @{ error = $_.Exception.Message } | ConvertTo-Json
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($errObj)
-                    $response.StatusCode = 500
-                    $response.ContentType = 'application/json'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                $response.Close()
-                continue
-            }
-
-            # Route: POST /api/connect (Launch Session via PowerShell Cmdlet)
-            if ($rawPath -eq '/api/connect' -and $request.HttpMethod -eq 'POST') {
-                try {
-                    $reader = [System.IO.StreamReader]::new($request.InputStream, $request.ContentEncoding)
-                    $bodyJson = $reader.ReadToEnd()
-                    $reqData = $bodyJson | ConvertFrom-Json
-
-                    $target = [StagecoachTarget]::new()
-                    $target.Id = $reqData.Target.Id
-                    $target.Name = $reqData.Target.Name
-                    $target.ResourceGroup = $reqData.Target.ResourceGroup
-                    $target.Kind = [StagecoachTargetKind]::$($reqData.Target.Kind)
-                    $target.DomainName = $reqData.Target.DomainName
-                    $target.DomainType = [StagecoachDomainType]::$($reqData.Target.DomainType)
-
-                    $session = Connect-StagecoachVM -Target $target -LocalUser $reqData.Username -Rdp $true
-                    $script:activeSessions[$session.SessionId] = $session
-
-                    $json = $session | ConvertTo-Json
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-
-                    $response.ContentType = 'application/json; charset=utf-8'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                catch {
-                    $errObj = @{ error = $_.Exception.Message } | ConvertTo-Json
-                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($errObj)
-                    $response.StatusCode = 500
-                    $response.ContentType = 'application/json'
-                    $response.ContentLength64 = $bytes.Length
-                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                }
-                $response.Close()
-                continue
-            }
-
-            # Route: GET /api/sessions (List Active Sessions)
-            if ($rawPath -eq '/api/sessions' -and $request.HttpMethod -eq 'GET') {
-                $sessionList = @($script:activeSessions.Values)
-                $json = $sessionList | ConvertTo-Json
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-                $response.ContentType = 'application/json; charset=utf-8'
-                $response.ContentLength64 = $bytes.Length
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
-                $response.Close()
-                continue
-            }
-
-            # Fallback 404
-            $response.StatusCode = 404
-            $response.Close()
-        }
+        Connect-StagecoachVM @connectArgs | Out-Null
     }
-    finally {
-        if ($listener -and $listener.IsListening) {
-            $listener.Stop()
-            $listener.Close()
-            Write-Information "[Stagecoach] Server listener stopped." -InformationAction Continue
-        }
+    catch {
+        Write-Host "  Connection failed: $($_.Exception.Message)" -ForegroundColor Red
     }
 }

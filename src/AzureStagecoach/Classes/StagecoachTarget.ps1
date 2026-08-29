@@ -5,7 +5,6 @@ $ErrorActionPreference = 'Stop'
 enum StagecoachTargetKind {
     AzureVM
     ArcServer
-    AzureLocalVM
 }
 
 enum StagecoachDomainType {
@@ -28,13 +27,27 @@ class StagecoachTarget {
     [string]$AgentStatus
     [string]$DomainName
     [StagecoachDomainType]$DomainType
-    [string]$BastionHostId
-    [string]$PublicIpAddress
+    [string]$AdminUsername
+    [string]$NicId
+    [string]$VNetId
     [string]$PrivateIpAddress
+    [string]$PublicIpAddress
+    [string]$BastionId
+    [string]$BastionName
+    [string]$BastionResourceGroup
+    [string]$BastionSku
+    [bool]$BastionSameVNet
     [hashtable]$Tags
 
     StagecoachTarget() {
         $this.Tags = @{}
     }
-}
 
+    [bool] IsWindows() {
+        return $this.OsType -match 'Windows'
+    }
+
+    [bool] HasBastion() {
+        return -not [string]::IsNullOrWhiteSpace($this.BastionName)
+    }
+}

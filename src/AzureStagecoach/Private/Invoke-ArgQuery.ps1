@@ -3,41 +3,41 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Invoke-ArgQuery {
+    <#
+    .SYNOPSIS
+        Runs an Azure Resource Graph query via az, following skip tokens for full results.
+    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$Query,
 
         [Parameter(Mandatory = $false)]
-        [string]$SubscriptionId,
-
-        [Parameter(Mandatory = $false)]
-        [string]$TenantId
+        [string[]]$SubscriptionId
     )
 
-    $azCmd = Get-Command -Name 'az' -ErrorAction SilentlyContinue
-    if (-not $azCmd) {
-        throw "Azure CLI ('az') is not installed or not in PATH."
-    }
+    $allRows = [System.Collections.Generic.List[object]]::new()
+    $skipToken = $null
 
-    $arguments = @('graph', 'query', '-q', $Query, '-o', 'json')
-    if ($SubscriptionId) {
-        $arguments += @('--subscriptions', $SubscriptionId)
-    }
-    if ($TenantId) {
-        $arguments += @('--tenant', $TenantId)
-    }
+    do {
+        $arguments = @('graph', 'query', '-q', $Query, '--first', '1000')
+        if ($SubscriptionId) {
+            $arguments += @('--subscriptions') + $SubscriptionId
+        }
+        if ($skipToken) {
+            $arguments += @('--skip-token', $skipToken)
+        }
 
-    $rawResult = & az @arguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Resource Graph query failed: $rawResult"
-    }
+        $page = Invoke-StagecoachAz -Arguments $arguments -AsJson
+        if ($null -eq $page) { break }
 
-    $parsed = $rawResult | ConvertFrom-Json
-    if ($parsed -and $parsed.data) {
-        return $parsed.data
-    }
+        $data = Get-StagecoachProp -InputObject $page -Name 'data' -Default @()
+        foreach ($row in @($data)) {
+            $allRows.Add($row)
+        }
 
-    return $parsed
+        $skipToken = Get-StagecoachProp -InputObject $page -Name 'skip_token'
+    } while ($skipToken)
+
+    return $allRows.ToArray()
 }
-

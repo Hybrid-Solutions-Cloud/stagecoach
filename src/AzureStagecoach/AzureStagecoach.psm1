@@ -22,9 +22,14 @@ foreach ($file in $publicFiles) {
 
 # Export Public Functions
 Export-ModuleMember -Function @(
-    'Get-StagecoachInventory',
-    'Get-StagecoachCredential',
+    'Start-Stagecoach',
     'Connect-StagecoachVM',
-    'Start-Stagecoach'
+    'Connect-StagecoachAccount',
+    'Get-StagecoachInventory',
+    'Get-StagecoachSavedConnection',
+    'Remove-StagecoachSavedConnection',
+    'Test-StagecoachPrerequisite',
+    'Enable-StagecoachArcSsh',
+    'Install-StagecoachOpenSsh',
+    'Get-StagecoachCredential'
 )
-
