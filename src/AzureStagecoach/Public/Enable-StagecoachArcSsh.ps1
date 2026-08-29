@@ -28,7 +28,7 @@ function Enable-StagecoachArcSsh {
         [string]$Name,
 
         [Parameter(ParameterSetName = 'ByTarget', Mandatory = $true, ValueFromPipeline = $true)]
-        [StagecoachTarget]$Target,
+        $Target,
 
         [ValidateRange(1, 65535)]
         [int]$Port = 22

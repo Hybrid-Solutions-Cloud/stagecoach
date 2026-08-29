@@ -41,6 +41,7 @@ function Resolve-StagecoachRoute {
         Tool        = 'az'
         Arguments   = @()
         Interactive = $false   # true → run in this console (SSH shells); false → detached window
+        LocalPort   = 0
         Notes       = @()
     }
 
@@ -105,6 +106,7 @@ function Resolve-StagecoachRoute {
             'Tunnel' {
                 $resourcePort = if ($Target.IsWindows()) { 3389 } else { 22 }
                 $localPort = if ($TunnelPort -gt 0) { $TunnelPort } else { Get-Random -Minimum 50000 -Maximum 50999 }
+                $route.LocalPort = $localPort
                 $route.Arguments = $bastionArgs + @('tunnel') + $commonArgs + @('--resource-port', "$resourcePort", '--port', "$localPort")
                 $route.Notes += "Tunnel opens on localhost:$localPort → $($Target.Name):$resourcePort. Connect your RDP/SSH client to 127.0.0.1:$localPort; closing the tunnel window ends the session."
             }

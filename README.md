@@ -24,14 +24,19 @@ Start-Stagecoach
 On Windows you can instead double-click **`Stagecoach.cmd`**, or run
 `pwsh ./scripts/Install-Stagecoach.ps1` once to get a desktop shortcut.
 
-`Start-Stagecoach` walks you through everything:
+`Start-Stagecoach` opens the **clickable web UI** in your browser
+(single-file `stagecoach.html` with vendored React — no build step, served on
+`127.0.0.1` only with a per-launch token):
 
-1. Checks the Azure CLI and its `resource-graph`, `ssh`, and `bastion`
-   extensions — offering to install anything missing.
-2. Signs you in with Entra ID if there is no active `az` session.
-3. Shows your **recent connections** first (press `1`–`9` to reconnect),
-   with the full machine list one keystroke away (`L`, or just type part
-   of a name to search).
+1. It checks the Azure CLI and its `resource-graph`, `ssh`, and `bastion`
+   extensions — one click installs anything missing.
+2. **Sign in with Microsoft** runs `az login`; sign in once, ride everywhere.
+3. Your **recent logins** sit at the top for one-click reconnects; below them
+   the estate grid lists every machine with its route (Bastion, Arc relay, or
+   direct) and the connect buttons that actually work for it.
+4. Every connect click spawns `pwsh` running `Connect-StagecoachVM` — the
+   browser never executes commands itself. Live tunnels and sessions show in
+   the sessions panel with a Stop button.
 
 ## How each machine is reached
 
@@ -49,8 +54,9 @@ Bastion tunnel you can point any RDP client at.
 
 | Cmdlet | What it does |
 |---|---|
-| `Start-Stagecoach` | Interactive front door: prereqs → sign-in → pick → connect |
-| `Connect-StagecoachVM` | Connect to a machine by name or piped target |
+| `Start-Stagecoach` | The front door: local web UI (sign-in → scan → grid → connect drawer → sessions) |
+| `Connect-StagecoachVM` | Connect to a machine by name, id, or piped target |
+| `Get-StagecoachSession` / `Stop-StagecoachSession` | List / stop live tunnels and sessions |
 | `Get-StagecoachInventory` | Discover machines, IPs, and Bastion mapping via Resource Graph (`-Cached` for offline) |
 | `Get-StagecoachSavedConnection` / `Remove-StagecoachSavedConnection` | Manage saved logins (`~/.stagecoach/connections.json`) |
 | `Connect-StagecoachAccount` | `az login` wrapper (tenant / device-code options) |

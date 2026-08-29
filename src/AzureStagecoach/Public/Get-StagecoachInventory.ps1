@@ -25,7 +25,7 @@ function Get-StagecoachInventory {
         Get-StagecoachInventory | Format-Table Name, Kind, OsType, PrivateIpAddress, BastionName
     #>
     [CmdletBinding()]
-    [OutputType([StagecoachTarget[]])]
+    [OutputType('StagecoachTarget[]')]
     param(
         [Parameter(Mandatory = $false)]
         [string[]]$SubscriptionId,

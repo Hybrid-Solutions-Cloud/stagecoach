@@ -1,53 +1,58 @@
 # Handoff
 
-## Session 2026-08-29 — Console-first rebuild (operator: "redo it, it doesn't work")
+## Session 2026-08-29 (part 2) — clickable web UI per the accepted plan
+
+Operator feedback mid-session: the console menu was wrong — the plan
+(`pmo/plans/stagecoach-design.md`) specifies a clickable local web app. Part 2
+delivered it on top of the part-1 module engine.
 
 ### What changed
 
-1. **Teardown** — deleted `Stagecoach.sln`, `src/Stagecoach.App|Core|Infrastructure`,
-   `tests/Stagecoach.Tests` (465 tracked bin/obj binaries included),
-   `Stagecoach.vbs`, old WPF scripts, and `src/AzureStagecoach/Web/stagecoach.html`
-   plus the HttpListener `Start-Stagecoach` (it exposed connect/credential APIs
-   with `Access-Control-Allow-Origin: *`).
-2. **Module rebuild** (`src/AzureStagecoach`, v0.2.0) — see CURRENT_TASK.md for
-   the feature list. Key fix: inventory now actually discovers NIC IPs and maps
-   Bastion hosts (VNet match, subscription fallback); previously
-   `BastionHostId`/IPs were never populated so Bastion connects were impossible.
-3. **Bug found by tests**: `return , $array` + `@()` at call sites nested arrays
-   and corrupted `connections.json` on the second save — removed the comma-return
-   idiom everywhere and made the JSON writer `-AsArray`.
-4. **New launchers**: `Stagecoach.cmd` (double-click), `scripts/Install-Stagecoach.ps1`
-   (desktop shortcut), `scripts/Test.ps1` (PSSA + Pester gate).
-5. **Docs**: README rewritten to match reality; DECISIONS.md updated.
+1. **`Start-Stagecoach` is now the local web host** (Public/Start-Stagecoach.ps1):
+   binds 127.0.0.1 on a random high port, per-launch bearer token passed in the
+   URL fragment, no CORS headers; serves `stagecoach.html` + `/vendor/*`;
+   JSON API: state, login, extensions/install, inventory, connections,
+   connect, sessions, sessions/stop, arc/enable-ssh, openssh/install, shutdown.
+   Every connect spawns `pwsh -Command Connect-StagecoachVM -Id ...` (SSH gets
+   a real terminal window via -NoExit; RDP/tunnel helpers run minimized).
+2. **`src/AzureStagecoach/Web/stagecoach.html`** — single-file React UI
+   (vendored `Web/vendor/`: React 18.3.1 UMD, ReactDOM, htm 3.1.1 — from npm,
+   committed, no build step): sign-in card (tenant + device-code options),
+   prereq banner with one-click extension install, recent-logins row, estate
+   grid (search, kind filter, connectable-only, route + why, per-capability
+   buttons, dimmed rows with reasons), connect drawer (method radios, username
+   with VM-admin hint, Arc SSH setup buttons with confirm), sessions panel.
+3. **Session registry** — Private/StagecoachSessionStore.ps1 + public
+   `Get-StagecoachSession` / `Stop-StagecoachSession`; Connect-StagecoachVM
+   records detached helpers; the server records interactive SSH wrappers.
+4. **Two real bugs found by testing**:
+   - `$x = if (...) { @() }` collapses to `$null` under StrictMode → first-run
+     inventory 500. Fixed by wrapping the whole conditional in `@()`.
+   - Class-typed attributes on exported functions (`[OutputType([StagecoachSession])]`,
+     `[StagecoachTarget]$Target`) resolve lazily from the CALLER's scope on
+     first invocation → "Unable to find type" for any external caller,
+     including the spawned pwsh children. Fixed: string-form OutputType and
+     untyped public `$Target` params. **GOTCHA for future public cmdlets.**
 
-### Commands run and results
+### Validation (sandbox)
 
-- Portable pwsh 7.4.6 in the sandbox: module imports clean under StrictMode;
-  all repo `.ps1/.psm1/.psd1` parse cleanly.
-- Smoke harness (module-scope stubs, mirrors `tests/Unit`): **28/28 pass**
-  (routing matrix, saved-login round-trip/ordering/UseCount/no-password,
-  inventory NIC+Bastion mapping, connect launch + `-NoSave`).
-- Pester/PSScriptAnalyzer could NOT run in the sandbox: PSGallery and its CDNs
-  are blocked by egress policy. The Pester suite is written for Pester 5 and
-  parse-validated; run `pwsh ./scripts/Test.ps1` on the workstation.
+- Playwright + bundled Chromium drove the real UI against a fake `az` CLI
+  (canned ARG/account/extension JSON): 7 machines, drawer connect + grid
+  connect each spawned a pwsh child running the cmdlet, 2 live sessions
+  tracked (registry pruning works), 2 saved logins created, 0 JS errors.
+  Screenshots delivered to the operator.
+- Module smoke harness: 28/28. All PowerShell files parse; import clean.
+- Pester/PSSA still not runnable in sandbox (PSGallery egress-blocked) — run
+  `pwsh ./scripts/Test.ps1` on the workstation.
 
 ### Branch
 
-`claude/azure-vm-login-tool-m4lg45` — committed and pushed this session.
-
-### Blockers / notes
-
-- No ADO Epic/Feature yet, so commits carry no `AB#` reference (matches all
-  prior repo history; OPEN_QUESTIONS #4).
-- `az` CLI not present in the sandbox — live discovery/connect untested here;
-  first real-world run should be `Start-Stagecoach` on the Windows workstation.
-- Arc RDP (`az ssh arc --rdp`) and Bastion native RDP are Windows-client-only;
-  non-Windows clients fall back to tunnels (built in).
+`claude/azure-vm-login-tool-m4lg45` — committed and pushed (parts 1 + 2).
 
 ### Next steps
 
-1. Operator smoke run on the workstation (login → list → connect each kind:
-   Bastion RDP, Bastion SSH, Arc SSH, Arc RDP).
-2. `pwsh ./scripts/Test.ps1` where PSGallery is reachable.
-3. If a machine needs SSH set up: `Enable-StagecoachArcSsh <name>` then
-   `Install-StagecoachOpenSsh <name>` (both prompt before Azure writes).
+1. Real-estate run on the Windows workstation (`Stagecoach.cmd`).
+2. Phase 3 credential polish: LAPS/KV indicator in the drawer, clipboard
+   staging with auto-clear (module resolver already exists).
+3. Consider swapping HttpListener → Pode when installing deps is possible;
+   SSE scan progress.

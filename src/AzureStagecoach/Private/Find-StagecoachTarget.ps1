@@ -7,11 +7,14 @@ function Find-StagecoachTarget {
     .SYNOPSIS
         Resolves a machine name (wildcards allowed) to exactly one inventory target.
     #>
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'ByName')]
     [OutputType([StagecoachTarget])]
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Name
+        [Parameter(ParameterSetName = 'ByName', Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(ParameterSetName = 'ById', Mandatory = $true)]
+        [string]$Id
     )
 
     $inventory = @(Get-StagecoachInventory -Cached)
@@ -20,7 +23,13 @@ function Find-StagecoachTarget {
         $inventory = @(Get-StagecoachInventory)
     }
 
-    $found = @($inventory | Where-Object { $_.Name -like $Name })
+    if ($PSCmdlet.ParameterSetName -eq 'ById') {
+        $Name = $Id  # for error messages
+        $found = @($inventory | Where-Object { $_.Id -eq $Id })
+    }
+    else {
+        $found = @($inventory | Where-Object { $_.Name -like $Name })
+    }
     if ($found.Count -eq 0) {
         throw "No machine named '$Name' in the inventory. Run Get-StagecoachInventory to refresh, or check the name."
     }

@@ -27,7 +27,7 @@ function Install-StagecoachOpenSsh {
         [string]$Name,
 
         [Parameter(ParameterSetName = 'ByTarget', Mandatory = $true, ValueFromPipeline = $true)]
-        [StagecoachTarget]$Target
+        $Target
     )
 
     process {

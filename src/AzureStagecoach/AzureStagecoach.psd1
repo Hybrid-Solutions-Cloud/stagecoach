@@ -20,6 +20,8 @@
         'Test-StagecoachPrerequisite',
         'Enable-StagecoachArcSsh',
         'Install-StagecoachOpenSsh',
+        'Get-StagecoachSession',
+        'Stop-StagecoachSession',
         'Get-StagecoachCredential'
     )
     CmdletsToExport = @()

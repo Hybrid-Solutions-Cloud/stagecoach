@@ -5,205 +5,253 @@ $ErrorActionPreference = 'Stop'
 function Start-Stagecoach {
     <#
     .SYNOPSIS
-        The Stagecoach front door: sign in once, pick a machine, get a session.
+        Starts Stagecoach: the local web UI for one-click RDP/SSH to your Azure estate.
     .DESCRIPTION
-        Interactive console launcher. On start it checks prerequisites (Azure
-        CLI + extensions, offering to install anything missing), signs you in
-        with Entra ID if needed, and loads your machines. Saved logins from
-        previous sessions are listed first for one-keystroke reconnects.
-    .PARAMETER Refresh
-        Re-discover the inventory from Azure before showing the menu.
+        Hosts the single-file web UI (stagecoach.html) on 127.0.0.1 with a
+        per-launch bearer token and opens it in your browser. From there:
+        sign in once with Entra ID, scan your machines, and click to connect.
+        Every connect click spawns a pwsh process running Connect-StagecoachVM —
+        the browser never executes commands itself (see pmo/plans/stagecoach-design.md §4).
+    .PARAMETER Port
+        Local TCP port to bind. Default: a random high port.
+    .PARAMETER NoBrowser
+        Do not open the browser automatically (prints the URL instead).
     .EXAMPLE
         Start-Stagecoach
     #>
     [CmdletBinding()]
-    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
-        Justification = 'Interactive console UI — host output is the product.')]
     param(
-        [switch]$Refresh
+        [ValidateRange(0, 65535)]
+        [int]$Port = 0,
+
+        [switch]$NoBrowser
     )
 
-    Write-Host ''
-    Write-Host '  ═══════════════════════════════════════════' -ForegroundColor DarkYellow
-    Write-Host '   STAGECOACH — one login, every VM, one pick ' -ForegroundColor Yellow
-    Write-Host '  ═══════════════════════════════════════════' -ForegroundColor DarkYellow
-    Write-Host ''
-
-    # --- 1. Prerequisites -------------------------------------------------
-    $prereq = Test-StagecoachPrerequisite
-    if (-not $prereq.AzCliPresent) {
-        Write-Host '  Azure CLI is not installed. Get it from https://aka.ms/azure-cli then run Start-Stagecoach again.' -ForegroundColor Red
-        return
-    }
-    if (@($prereq.MissingExtensions).Count -gt 0) {
-        Write-Host "  Missing az CLI extensions: $($prereq.MissingExtensions -join ', ')" -ForegroundColor Yellow
-        $answer = Read-Host '  Install them now? [Y/n]'
-        if ($answer -notmatch '^[nN]') {
-            $prereq = Test-StagecoachPrerequisite -InstallMissing
-        }
-        else {
-            Write-Host '  Stagecoach needs those extensions to discover and connect. Exiting.' -ForegroundColor Red
-            return
-        }
+    $webRoot = Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath 'Web'
+    $htmlPath = Join-Path -Path $webRoot -ChildPath 'stagecoach.html'
+    if (-not (Test-Path -Path $htmlPath)) {
+        throw "Web UI not found at '$htmlPath'."
     }
 
-    # --- 2. Sign-in -------------------------------------------------------
-    if (-not $prereq.LoggedIn) {
-        Write-Host '  No Azure session found — opening Entra ID sign-in...' -ForegroundColor Cyan
-        Connect-StagecoachAccount | Out-Null
+    $token = [System.Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+    $modulePath = (Get-Module -Name 'AzureStagecoach').Path
+    $pwshExe = Join-Path -Path $PSHOME -ChildPath ($IsWindows ? 'pwsh.exe' : 'pwsh')
+
+    # --- start the listener (retry on port collision when auto-picking) -----
+    $listener = $null
+    $attempts = 0
+    do {
+        $attempts++
+        $bindPort = if ($Port -gt 0) { $Port } else { Get-Random -Minimum 40000 -Maximum 49999 }
+        $uiUrl = "http://127.0.0.1:$bindPort/"
+        try {
+            $listener = [System.Net.HttpListener]::new()
+            $listener.Prefixes.Add($uiUrl)
+            $listener.Start()
+        }
+        catch {
+            $listener = $null
+            if ($Port -gt 0 -or $attempts -ge 5) { throw "Could not bind $uiUrl : $($_.Exception.Message)" }
+        }
+    } while (-not $listener)
+
+    Write-Information "[stagecoach] UI ready at $uiUrl — Ctrl+C here stops the server (sessions keep running)." -InformationAction Continue
+    if (-not $NoBrowser) {
+        Start-Process "$uiUrl#$token"
     }
     else {
-        Write-Host "  Signed in as $($prereq.Account.User)" -ForegroundColor Green
+        Write-Information "[stagecoach] Open: $uiUrl#$token" -InformationAction Continue
     }
 
-    # --- 3. Inventory -----------------------------------------------------
-    $inventory = @()
-    if (-not $Refresh) {
-        $inventory = @(Get-StagecoachInventory -Cached)
+    # --- tiny helpers -------------------------------------------------------
+    $sendJson = {
+        param($Response, $Object, [int]$Status = 200)
+        $Response.StatusCode = $Status
+        $Response.ContentType = 'application/json; charset=utf-8'
+        $json = if ($null -eq $Object) { 'null' } else { ConvertTo-Json -InputObject $Object -Depth 8 }
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+        $Response.ContentLength64 = $bytes.Length
+        $Response.OutputStream.Write($bytes, 0, $bytes.Length)
+        $Response.Close()
     }
-    if ($inventory.Count -eq 0 -or $Refresh) {
-        Write-Host '  Discovering your machines (Azure VMs, Bastion hosts, Arc servers)...' -ForegroundColor Cyan
-        $inventory = @(Get-StagecoachInventory)
+    $readBody = {
+        param($Request)
+        $reader = [System.IO.StreamReader]::new($Request.InputStream, [System.Text.Encoding]::UTF8)
+        $raw = $reader.ReadToEnd()
+        if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+        return $raw | ConvertFrom-Json
     }
-    Write-Host "  $($inventory.Count) machine(s) available." -ForegroundColor Green
-    Write-Host ''
+    $escape = { param([string]$s) if ($null -eq $s) { '' } else { $s -replace "'", "''" } }
 
-    # --- 4. Menu loop -----------------------------------------------------
-    while ($true) {
-        $saved = @(Get-StagecoachSavedConnection | Select-Object -First 9)
+    $running = $true
+    try {
+        while ($running -and $listener.IsListening) {
+            $context = $listener.GetContext()
+            $request = $context.Request
+            $response = $context.Response
+            $path = $request.Url.AbsolutePath
 
-        if ($saved.Count -gt 0) {
-            Write-Host '  Recent connections:' -ForegroundColor Yellow
-            for ($i = 0; $i -lt $saved.Count; $i++) {
-                $entry = $saved[$i]
-                $user = Get-StagecoachProp -InputObject $entry -Name 'Username' -Default ''
-                $userLabel = if ($user) { " as $user" } else { ' as Entra ID' }
-                Write-Host ("   [{0}] {1}  ({2}, {3}{4})" -f ($i + 1),
-                    (Get-StagecoachProp -InputObject $entry -Name 'TargetName'),
-                    (Get-StagecoachProp -InputObject $entry -Name 'Kind'),
-                    (Get-StagecoachProp -InputObject $entry -Name 'Method'), $userLabel)
-            }
-            Write-Host ''
-        }
-
-        Write-Host '  [1-9] reconnect   [L] list machines   [R] refresh from Azure   [A] add account   [Q] quit' -ForegroundColor DarkGray
-        Write-Host '  ...or type part of a machine name to search.' -ForegroundColor DarkGray
-        $choice = Read-Host '  stagecoach'
-        if ([string]::IsNullOrWhiteSpace($choice)) { continue }
-
-        switch -Regex ($choice.Trim()) {
-            '^[Qq]$' { Write-Host '  Happy trails.' -ForegroundColor DarkYellow; return }
-            '^[Rr]$' {
-                Write-Host '  Refreshing inventory...' -ForegroundColor Cyan
-                $inventory = @(Get-StagecoachInventory)
-                Write-Host "  $($inventory.Count) machine(s)." -ForegroundColor Green
-                continue
-            }
-            '^[Aa]$' {
-                Connect-StagecoachAccount | Format-Table -AutoSize | Out-Host
-                Write-Host '  Refreshing inventory with the new account...' -ForegroundColor Cyan
-                $inventory = @(Get-StagecoachInventory)
-                continue
-            }
-            '^[Ll]$' {
-                Show-StagecoachPicker -Inventory $inventory
-                continue
-            }
-            '^[1-9]$' {
-                $index = [int]$choice - 1
-                if ($index -ge $saved.Count) { Write-Host '  No such entry.' -ForegroundColor Red; continue }
-                $entry = $saved[$index]
-                $targetId = Get-StagecoachProp -InputObject $entry -Name 'TargetId'
-                $target = $inventory | Where-Object { $_.Id -eq $targetId } | Select-Object -First 1
-                if (-not $target) {
-                    Write-Host '  That machine is no longer in the inventory — refresh with [R].' -ForegroundColor Red
+            try {
+                # ---- static: the single-file UI and its vendored bundles ----
+                if ($path -eq '/' -and $request.HttpMethod -eq 'GET') {
+                    $html = [System.IO.File]::ReadAllText($htmlPath)
+                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($html)
+                    $response.ContentType = 'text/html; charset=utf-8'
+                    $response.ContentLength64 = $bytes.Length
+                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                    $response.Close()
                     continue
                 }
-                $connectArgs = @{
-                    Target = $target
-                    Method = (Get-StagecoachProp -InputObject $entry -Name 'Method' -Default 'Auto')
+                if ($path -like '/vendor/*' -and $request.HttpMethod -eq 'GET') {
+                    $fileName = [System.IO.Path]::GetFileName($path)
+                    $allowed = @('react.production.min.js', 'react-dom.production.min.js', 'htm.umd.js')
+                    $filePath = Join-Path -Path $webRoot -ChildPath 'vendor' -AdditionalChildPath $fileName
+                    if ($fileName -notin $allowed -or -not (Test-Path $filePath)) {
+                        $response.StatusCode = 404; $response.Close(); continue
+                    }
+                    $bytes = [System.IO.File]::ReadAllBytes($filePath)
+                    $response.ContentType = 'text/javascript; charset=utf-8'
+                    $response.ContentLength64 = $bytes.Length
+                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                    $response.Close()
+                    continue
                 }
-                $user = Get-StagecoachProp -InputObject $entry -Name 'Username' -Default ''
-                if ($user) { $connectArgs.LocalUser = $user }
-                Connect-StagecoachVM @connectArgs | Out-Null
-                continue
+
+                # ---- API: same-origin only, per-launch token required -------
+                if ($path -notlike '/api/*') {
+                    $response.StatusCode = 404; $response.Close(); continue
+                }
+                if ($request.Headers['X-Stagecoach-Token'] -ne $token) {
+                    & $sendJson $response @{ error = 'Invalid or missing token. Reload the page from the Start-Stagecoach window.' } 401
+                    continue
+                }
+
+                switch -Regex ("$($request.HttpMethod) $path") {
+                    '^GET /api/state$' {
+                        $prereq = Test-StagecoachPrerequisite
+                        & $sendJson $response @{
+                            azCliPresent      = $prereq.AzCliPresent
+                            loggedIn          = $prereq.LoggedIn
+                            account           = $prereq.Account
+                            missingExtensions = @($prereq.MissingExtensions)
+                            ready             = $prereq.Ready
+                            windowsClient     = [bool]$IsWindows
+                        }
+                    }
+                    '^POST /api/extensions/install$' {
+                        Test-StagecoachPrerequisite -InstallMissing | Out-Null
+                        & $sendJson $response @{ ok = $true }
+                    }
+                    '^POST /api/login$' {
+                        $body = & $readBody $request
+                        $loginArgs = @{}
+                        if ($body -and $body.PSObject.Properties['tenantId'] -and $body.tenantId) { $loginArgs.TenantId = [string]$body.tenantId }
+                        if ($body -and $body.PSObject.Properties['useDeviceCode'] -and $body.useDeviceCode) { $loginArgs.UseDeviceCode = $true }
+                        $accounts = Connect-StagecoachAccount @loginArgs
+                        & $sendJson $response @{ ok = $true; subscriptions = @($accounts) }
+                    }
+                    '^GET /api/inventory$' {
+                        $refresh = $request.QueryString['refresh'] -eq '1'
+                        $inventory = @(if ($refresh) { Get-StagecoachInventory } else { Get-StagecoachInventory -Cached })
+                        if ($inventory.Count -eq 0 -and -not $refresh) { $inventory = @(Get-StagecoachInventory) }
+                        & $sendJson $response @{ machines = @($inventory) }
+                    }
+                    '^GET /api/connections$' {
+                        & $sendJson $response @{ connections = @(Get-StagecoachSavedConnection) }
+                    }
+                    '^POST /api/connections/remove$' {
+                        $body = & $readBody $request
+                        Remove-StagecoachSavedConnection -Name ([string]$body.name) -Confirm:$false
+                        & $sendJson $response @{ ok = $true }
+                    }
+                    '^POST /api/connect$' {
+                        $body = & $readBody $request
+                        $target = Find-StagecoachTarget -Id ([string]$body.id)
+                        $method = [string]$body.method
+                        if ($method -notin @('Auto', 'Rdp', 'Ssh', 'Tunnel')) { $method = 'Auto' }
+                        $username = ''
+                        if ($body.PSObject.Properties['username'] -and $body.username) { $username = [string]$body.username }
+
+                        # Validate the route first so bad picks fail here, with a message,
+                        # instead of inside a flashing child window.
+                        $routeParams = @{ Target = $target; Method = $method }
+                        if ($username) { $routeParams.LocalUser = $username }
+                        $route = Resolve-StagecoachRoute @routeParams
+
+                        # The click never runs a command in-browser: spawn pwsh running the cmdlet.
+                        $cmd = "Import-Module '$(& $escape $modulePath)'; Connect-StagecoachVM -Id '$(& $escape $target.Id)' -Method $($route.Method) -NoSave"
+                        if ($username) { $cmd += " -LocalUser '$(& $escape $username)'" }
+
+                        $spawnArgs = @('-NoProfile')
+                        $windowStyle = 'Minimized'
+                        if ($route.Interactive) {
+                            # SSH session: give the operator a real terminal window.
+                            $spawnArgs += '-NoExit'
+                            $windowStyle = 'Normal'
+                        }
+                        $spawnArgs += @('-Command', $cmd)
+
+                        $proc = if ($IsWindows) {
+                            Start-Process -FilePath $pwshExe -ArgumentList $spawnArgs -WindowStyle $windowStyle -PassThru
+                        }
+                        else {
+                            Start-Process -FilePath $pwshExe -ArgumentList $spawnArgs -PassThru
+                        }
+
+                        if ($route.Interactive -and $proc) {
+                            Save-StagecoachSessionRecord -TargetId $target.Id -TargetName $target.Name `
+                                -Method $route.Method -ProcessId $proc.Id -LocalPort $route.LocalPort
+                        }
+                        Save-StagecoachConnectionProfile -Target $target -Method $route.Method -Username $username
+                        & $sendJson $response @{
+                            ok        = $true
+                            method    = $route.Method
+                            notes     = @($route.Notes)
+                            localPort = $route.LocalPort
+                        }
+                    }
+                    '^GET /api/sessions$' {
+                        & $sendJson $response @{ sessions = @(Get-StagecoachSession) }
+                    }
+                    '^POST /api/sessions/stop$' {
+                        $body = & $readBody $request
+                        Stop-StagecoachSession -SessionId ([string]$body.sessionId) -Confirm:$false
+                        & $sendJson $response @{ ok = $true }
+                    }
+                    '^POST /api/arc/enable-ssh$' {
+                        $body = & $readBody $request
+                        $target = Find-StagecoachTarget -Id ([string]$body.id)
+                        # The UI shows an explicit confirmation before calling this (Azure write).
+                        Enable-StagecoachArcSsh -Target $target -Confirm:$false
+                        & $sendJson $response @{ ok = $true }
+                    }
+                    '^POST /api/openssh/install$' {
+                        $body = & $readBody $request
+                        $target = Find-StagecoachTarget -Id ([string]$body.id)
+                        # The UI shows an explicit confirmation before calling this (Azure write).
+                        Install-StagecoachOpenSsh -Target $target -Confirm:$false
+                        & $sendJson $response @{ ok = $true }
+                    }
+                    '^POST /api/shutdown$' {
+                        & $sendJson $response @{ ok = $true }
+                        $running = $false
+                    }
+                    default {
+                        & $sendJson $response @{ error = "No such endpoint: $($request.HttpMethod) $path" } 404
+                    }
+                }
             }
-            default {
-                Show-StagecoachPicker -Inventory $inventory -Filter $choice.Trim()
-                continue
+            catch {
+                $payload = @{ error = $_.Exception.Message }
+                if ($env:STAGECOACH_DEBUG) { $payload.stack = $_.ScriptStackTrace }
+                try { & $sendJson $response $payload 500 } catch { }
             }
         }
     }
-}
-
-function Show-StagecoachPicker {
-    <#
-    .SYNOPSIS
-        Interactive machine picker: filter, choose, set method/user, connect.
-    #>
-    [CmdletBinding()]
-    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
-        Justification = 'Interactive console UI — host output is the product.')]
-    param(
-        [Parameter(Mandatory = $true)]
-        [AllowEmptyCollection()]
-        [StagecoachTarget[]]$Inventory,
-
-        [Parameter(Mandatory = $false)]
-        [string]$Filter
-    )
-
-    $list = @($Inventory)
-    if ($Filter) {
-        $list = @($Inventory | Where-Object { $_.Name -like "*$Filter*" })
-    }
-    if ($list.Count -eq 0) {
-        Write-Host "  No machines match '$Filter'." -ForegroundColor Red
-        return
-    }
-
-    Write-Host ''
-    for ($i = 0; $i -lt $list.Count; $i++) {
-        $t = $list[$i]
-        $route = if ($t.Kind -eq [StagecoachTargetKind]::ArcServer) { 'Arc relay' }
-        elseif ($t.HasBastion()) { "Bastion: $($t.BastionName)" }
-        elseif ($t.PublicIpAddress -or $t.PrivateIpAddress) { 'Direct' }
-        else { 'No route!' }
-        $os = if ($t.OsType) { $t.OsType } else { '?' }
-        Write-Host ("   [{0,3}] {1,-30} {2,-10} {3,-9} {4}" -f ($i + 1), $t.Name, $t.Kind, $os, $route)
-    }
-    Write-Host ''
-
-    $pick = Read-Host "  Machine number (1-$($list.Count)), or Enter to go back"
-    if ([string]::IsNullOrWhiteSpace($pick) -or $pick -notmatch '^\d+$') { return }
-    $index = [int]$pick - 1
-    if ($index -lt 0 -or $index -ge $list.Count) { Write-Host '  No such entry.' -ForegroundColor Red; return }
-    $target = $list[$index]
-
-    $defaultMethod = if ($target.IsWindows()) { 'Rdp' } else { 'Ssh' }
-    $methodChoice = Read-Host "  Method: [Enter]=$defaultMethod, or rdp / ssh / tunnel"
-    $method = switch -Regex ($methodChoice.Trim()) {
-        '^[Rr]' { 'Rdp'; break }
-        '^[Ss]' { 'Ssh'; break }
-        '^[Tt]' { 'Tunnel'; break }
-        default { $defaultMethod }
-    }
-
-    $userPrompt = if ($target.AdminUsername) {
-        "  Username: [Enter]=Entra ID, or a local/domain user (VM admin is '$($target.AdminUsername)')"
-    }
-    else {
-        '  Username: [Enter]=Entra ID, or a local/domain user'
-    }
-    $user = Read-Host $userPrompt
-
-    $connectArgs = @{ Target = $target; Method = $method }
-    if (-not [string]::IsNullOrWhiteSpace($user)) { $connectArgs.LocalUser = $user.Trim() }
-
-    try {
-        Connect-StagecoachVM @connectArgs | Out-Null
-    }
-    catch {
-        Write-Host "  Connection failed: $($_.Exception.Message)" -ForegroundColor Red
+    finally {
+        if ($listener) {
+            try { $listener.Stop(); $listener.Close() } catch { }
+        }
+        Write-Information '[stagecoach] Server stopped. Live sessions keep running; see Get-StagecoachSession.' -InformationAction Continue
     }
 }

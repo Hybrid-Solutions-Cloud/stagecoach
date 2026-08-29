@@ -21,7 +21,7 @@ function Get-StagecoachCredential {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
-        [StagecoachTarget]$Target,
+        $Target,
 
         [Parameter(Mandatory = $false)]
         [string]$VaultName = 'kv-hcs-vault-01'

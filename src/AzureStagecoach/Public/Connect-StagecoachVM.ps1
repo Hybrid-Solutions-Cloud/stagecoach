@@ -33,13 +33,16 @@ function Connect-StagecoachVM {
         Get-StagecoachInventory | Where-Object Name -eq 'arc-dc-02' | Connect-StagecoachVM -Method Rdp -LocalUser 'CORP\kturner'
     #>
     [CmdletBinding(DefaultParameterSetName = 'ByName')]
-    [OutputType([StagecoachSession])]
+    [OutputType('StagecoachSession')]
     param(
         [Parameter(ParameterSetName = 'ByName', Mandatory = $true, Position = 0)]
         [string]$Name,
 
+        [Parameter(ParameterSetName = 'ById', Mandatory = $true)]
+        [string]$Id,
+
         [Parameter(ParameterSetName = 'ByTarget', Mandatory = $true, ValueFromPipeline = $true)]
-        [StagecoachTarget]$Target,
+        $Target,
 
         [ValidateSet('Auto', 'Rdp', 'Ssh', 'Tunnel')]
         [string]$Method = 'Auto',
@@ -55,6 +58,9 @@ function Connect-StagecoachVM {
     process {
         if ($PSCmdlet.ParameterSetName -eq 'ByName') {
             $Target = Find-StagecoachTarget -Name $Name
+        }
+        elseif ($PSCmdlet.ParameterSetName -eq 'ById') {
+            $Target = Find-StagecoachTarget -Id $Id
         }
 
         $route = Resolve-StagecoachRoute -Target $Target -Method $Method -LocalUser $LocalUser -TunnelPort $TunnelPort
@@ -92,7 +98,10 @@ function Connect-StagecoachVM {
             $proc = Start-Process -FilePath $toolPath -ArgumentList $route.Arguments -PassThru
             if ($proc) {
                 $session.HelperProcessId = $proc.Id
+                $session.LocalPort = $route.LocalPort
                 $session.State = [StagecoachSessionState]::Active
+                Save-StagecoachSessionRecord -TargetId $Target.Id -TargetName $Target.Name `
+                    -Method $route.Method -ProcessId $proc.Id -LocalPort $route.LocalPort
             }
         }
 
