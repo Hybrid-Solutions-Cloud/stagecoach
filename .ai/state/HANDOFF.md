@@ -42,6 +42,7 @@ Replaced the abandoned PowerShell/Pode/browser path and incomplete WPF/.NET 9 sc
 - `dotnet format Stagecoach.sln --verify-no-changes --no-restore`: success
 - `dotnet list Stagecoach.sln package --vulnerable --include-transitive`: no known vulnerable packages
 - `git diff --check`: success
+- `npm ci` and `npm run docs:build`: success after correcting the accepted-design link for VitePress
 - Self-contained published executable: launched with a responsive `Stagecoach` main window
 - MSI: silent install, installed-app launch/readiness check, and silent uninstall all passed
 - ZIP SHA-256 sidecar matches the generated archive
@@ -59,4 +60,4 @@ Live Entra sign-in, subscription discovery, Bastion, Arc, Azure Local, target cr
 
 ### Repository note
 
-The native redesign is committed with the AB#7937 reference and pushed to the feature branch.
+The native redesign is committed with the AB#7937 reference and pushed to the feature branch. PR #1's initial documentation check exposed a VitePress dead link; the link was corrected and the complete Release build, tests, ZIP, checksum, and MSI were regenerated successfully before merge.

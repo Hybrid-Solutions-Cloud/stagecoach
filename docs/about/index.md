@@ -8,5 +8,5 @@ Stagecoach is local-first and single-user. It has no hosted control plane and no
 
 - [Quickstart](../guide/quickstart.md)
 - [Architecture](../guide/architecture.md)
-- [Accepted design](../../pmo/plans/stagecoach-design.md)
+- [Accepted design](https://github.com/Hybrid-Solutions-Cloud/stagecoach/blob/main/pmo/plans/stagecoach-design.md)
 - [Source](https://github.com/Hybrid-Solutions-Cloud/stagecoach)
