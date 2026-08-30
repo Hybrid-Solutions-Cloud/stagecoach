@@ -5,4 +5,5 @@
 - Entra RDP to Windows requires the client PC Entra-joined/registered to the same tenant as the VM + AADLoginForWindows extension.
 - AAD-issued OpenSSH certs are Linux-only today; Windows targets use `--local-user`.
 - Arc SSH needs the HybridConnectivity default endpoint + SSH service config (port 22); the CLI prompts to create it (`--yes` to auto-accept).
-- Raw Graph `deviceLocalCredentials` returns Base64 — decode before use.
+- The Windows UI inspection harness currently misattributes Avalonia windows to an installed Vault Prospector app. Use process responsiveness plus build/runtime smoke evidence until the harness association bug is corrected.
+- `az network bastion` ships in the Azure CLI; there is no separate `bastion` CLI extension to install.

@@ -1,50 +1,51 @@
-# Architecture Overview
+# Architecture
 
-Stagecoach is designed as a **local-first, zero-infrastructure application**. It bridges your browser directly to native workstation processes without requiring cloud servers, multi-tenant databases, or Node.js compilation steps.
+Stagecoach is a Windows-only Avalonia application on .NET 10. It uses no localhost server, browser runtime, service principal, or shared cloud database.
 
----
-
-## High-Level Architecture
-
-```
-┌──────────────────────────────── Operator Workstation ────────────────────────────────┐
-│                                                                                      │
-│   Single-File React UI (http://127.0.0.1:8085/)                                      │
-│   ├── Static HTML + Vendored React UMD + htm                                         │
-│   ├── Estate Grid (Resource Graph inventory + Domain badges)                         │
-│   └── Slide-Over Connect Drawer (Credential resolver status)                         │
-│                           │                                                          │
-│                           │ Local HTTP (GET /api/inventory, POST /api/connect)       │
-│                           ▼                                                          │
-│   PowerShell 7 Localhost Server (Start-Stagecoach)                                   │
-│   ├── Discovery Engine: Queries Azure Resource Graph (ARG)                           │
-│   ├── Credential Resolver: Resolves LAPS, Domain defaults & Key Vault secrets        │
-│   └── Process Launcher: Detached process spawning of az & mstsc.exe                  │
-│                           │                                                          │
-└───────────────────────────┼──────────────────────────────────────────────────────────┘
-                            │ HTTPS (Operator's az login session)
-                            ▼
-           Azure ARM / Resource Graph / Key Vault / Arc Relay
+```text
+Avalonia UI
+  ├─ identity and scope management
+  ├─ merged estate, route selection, sessions
+  └─ credential mappings, settings, remediation confirmation
+          │
+          ▼
+Core contracts and models
+          │
+          ▼
+Infrastructure
+  ├─ isolated Azure CLI profiles (WAM/device code)
+  ├─ Azure Resource Graph discovery and correlation
+  ├─ SQLCipher metadata + DPAPI database key
+  ├─ Windows Credential Manager
+  └─ managed az / mstsc / ssh processes
+          │
+          ▼
+Azure Resource Manager, Resource Graph, Bastion, Arc relay
 ```
 
----
+## Identity model
 
-## Core Design Principles
+An Entra identity owns an isolated Azure CLI configuration directory. Tenant and subscription scope is stored separately and newly discovered scope requires review. A machine may have access paths from multiple identities; Stagecoach never treats one process-wide Azure session as authoritative.
 
-### 1. Zero Infrastructure & Local-Only Execution
-- Stagecoach runs entirely on the operator's machine.
-- The web server binds strictly to `127.0.0.1`.
-- No server-side components, Docker containers, or cloud VMs need to be deployed.
+Connection identities are different objects. They represent accounts inside target operating systems and may be mapped by machine, tag, domain, resource group, subscription, or tenant. Arc relay and target desktop identities can be different.
 
-### 2. Single-File Frontend
-- The user interface (`stagecoach.html`) is built using vendored React UMD bundles and `htm` tagged template literals.
-- **No Node.js or Webpack required** on the operator's workstation.
+## Discovery model
 
-### 3. Native Subprocess Orchestration
-- Web browsers cannot directly invoke desktop programs like `mstsc.exe` or `az.exe`.
-- When an action is taken in the browser, it sends a command to the local PowerShell 7 listener, which executes the corresponding `AzureStagecoach` cmdlet.
+One bounded Resource Graph query retrieves VMs, Arc machines, Azure Local VM instances, extensions, NICs, public IPs, VNets/peerings, and Bastion hosts. The correlator de-duplicates Azure Local parent/child resources and calculates candidate routes with an explicit readiness state and reason.
 
-### 4. Zero Credential Persistence
-- Passwords and tokens are **never written to disk**, cookies, or local storage.
-- Passwords are held transiently in memory as secure strings only for the seconds required to stage the session.
+## Process boundary
 
+All launch arguments are passed through `ProcessStartInfo.ArgumentList`; no target-derived command text is evaluated by a shell. Bastion and Arc helpers are tracked as managed sessions. RDP credentials are staged as session-persistent Windows credentials and removed when the client ends. SSH password relay uses the small `Stagecoach.AskPass` helper, which resolves one Windows Credential Manager profile at invocation time.
+
+## Local files
+
+Per-user state is under `%LOCALAPPDATA%\Stagecoach`:
+
+- `stagecoach.db`: SQLCipher-encrypted inventory, scope, mappings, favorites, and recents
+- `stagecoach.db.key`: DPAPI CurrentUser-protected database key
+- `settings.json`: non-secret appearance and refresh settings
+- `identities\<id>\azure`: isolated Azure CLI token/config state
+- `azure-cli-extensions`: shared CLI extension installation
+- `sessions`: short-lived `.rdp` files with endpoint and username only
+
+Resolved passwords and Azure tokens are never stored in the database or settings file.

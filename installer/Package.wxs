@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="Stagecoach"
+    Manufacturer="Hybrid Solutions Cloud"
+    Version="$(MsiVersion)"
+    UpgradeCode="{F6842043-9D48-483E-A54F-F628F6A1BA2F}"
+    Language="1033"
+    Scope="perMachine"
+    Compressed="yes">
+    <SummaryInformation Description="Stagecoach Windows desktop connection hub" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Stagecoach is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/Hybrid-Solutions-Cloud/stagecoach" />
+    <Property Id="ARPCONTACT" Value="Hybrid Solutions Cloud" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Stagecoach" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Stagecoach" />
+    </StandardDirectory>
+
+    <Component Id="MainExecutable" Directory="INSTALLFOLDER" Guid="{748528B4-C6F6-4E41-B50A-BB66ED52C47D}">
+      <File Id="MainExecutableFile" Source="$(PublishDirectory)\Stagecoach.App.exe" KeyPath="yes">
+        <Shortcut Id="StagecoachStartMenuShortcut" Directory="ApplicationProgramsFolder" Name="Stagecoach"
+                  Description="Connect to Azure, Arc, and Azure Local machines" WorkingDirectory="INSTALLFOLDER" Advertise="yes" />
+      </File>
+      <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+    </Component>
+    <ComponentGroup Id="ProductFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(PublishDirectory)\**">
+        <Exclude Files="$(PublishDirectory)\Stagecoach.App.exe" />
+        <Exclude Files="$(PublishDirectory)\**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+    <Feature Id="MainFeature" Title="Stagecoach" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentGroupRef Id="ProductFiles" />
+    </Feature>
+  </Package>
+</Wix>

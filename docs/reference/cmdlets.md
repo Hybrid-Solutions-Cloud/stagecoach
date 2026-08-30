@@ -1,57 +1,14 @@
-# PowerShell Cmdlet Reference
+# Azure CLI integration reference
 
-The `AzureStagecoach` module provides standalone PowerShell 7 cmdlets that can be invoked interactively or in automated scripts without the web interface.
+Stagecoach is a desktop app and does not expose a PowerShell module or localhost API. Its supported automation surface is the repository build/package scripts.
 
----
+The app invokes these Azure CLI command families through argument-safe process APIs and an identity-specific `AZURE_CONFIG_DIR`:
 
-## `Start-Stagecoach`
+- `az login`
+- `az account list`
+- `az graph query`
+- `az network bastion tunnel|rdp|ssh`
+- `az ssh arc`
+- `az connectedmachine extension create`
 
-Starts the local Stagecoach web server and opens the dashboard in your default browser.
-
-```powershell
-Start-Stagecoach [-Port <int>] [-NoBrowser]
-```
-
-### Parameters
-- `-Port`: The local TCP port to bind (default: `8085`).
-- `-NoBrowser`: Prevents automatically opening the browser upon server start.
-
----
-
-## `Get-StagecoachInventory`
-
-Queries Azure Resource Graph across accessible subscriptions for Azure VMs and Arc servers, parsing OS, power state, and domain/workgroup identity.
-
-```powershell
-Get-StagecoachInventory [-SubscriptionId <string>]
-```
-
-### Outputs
-- Array of `StagecoachTarget` objects containing `Id`, `Name`, `Kind`, `OsName`, `DomainName`, `DomainType`, and `PowerState`.
-
----
-
-## `Get-StagecoachCredential`
-
-Resolves credentials for a given target across Entra LAPS, Active Directory Domain secrets, and Key Vault conventions.
-
-```powershell
-Get-StagecoachCredential -Target <StagecoachTarget> [-VaultName <string>]
-```
-
-### Outputs
-- `PSCustomObject` containing `Source`, `Username`, and `Password`.
-
----
-
-## `Connect-StagecoachVM`
-
-Initiates an RDP or SSH connection to an Azure VM or Arc-enabled server using the optimal Azure CLI command.
-
-```powershell
-Connect-StagecoachVM -Target <StagecoachTarget> [-LocalUser <string>] [-Rdp <bool>]
-```
-
-### Outputs
-- `StagecoachSession` object with `SessionId`, `Method`, `HelperProcessId`, and `State`.
-
+Connection helpers inherit `AZURE_EXTENSION_DIR=%LOCALAPPDATA%\Stagecoach\azure-cli-extensions`. Sensitive values are not included in Azure CLI arguments.

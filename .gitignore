@@ -21,8 +21,7 @@ coverage/
 # .NET build output
 **/bin/
 **/obj/
-*.user
-*.suo
+artifacts/
 
 # PowerShell module output
 out/

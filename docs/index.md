@@ -3,11 +3,11 @@ layout: home
 
 hero:
   name: Stagecoach
-  text: One login. Every VM. One click.
-  tagline: Local Entra ID-authenticated RDP/SSH launcher for Azure Bastion, Arc servers, and direct VMs.
+  text: Every estate. The right identity. One click.
+  tagline: Native Windows connection hub for Azure VMs, Bastion, Azure Arc, and Azure Local.
   image:
     src: /images/stagecoach-icon.svg
-    alt: Stagecoach wagon-wheel logo
+    alt: Stagecoach logo
   actions:
     - theme: brand
       text: Get Started
@@ -15,21 +15,18 @@ hero:
     - theme: alt
       text: Architecture
       link: /guide/architecture
-    - theme: alt
-      text: View on GitHub
-      link: https://github.com/Hybrid-Solutions-Cloud/stagecoach
 
 features:
-  - icon: 🏰
-    title: Azure Bastion Native Client
-    details: Connect to Azure VMs behind Bastion with native mstsc.exe — Entra ID SSO and MFA included.
-  - icon: 🌵
-    title: Azure Arc & Azure Local
-    details: 1-click RDP over SSH to Arc-enabled servers with automatic Active Directory Domain and Workgroup detection.
+  - icon: 🪪
+    title: Multiple Entra identities
+    details: Isolated Windows-encrypted Azure sessions with explicit tenant and subscription scope.
+  - icon: 🖥️
+    title: One estate view
+    details: Azure VM, Bastion, Arc, and Azure Local targets with visible routes and readiness.
   - icon: 🔐
-    title: Smart Credential Resolver
-    details: Automatic secret lookup across Entra LAPS, AD Domain Accounts, and Azure Key Vault with zero disk persistence.
-  - icon: ⚡
-    title: Zero Infrastructure
-    details: Localhost PowerShell 7 backend + single-file React interface. No cloud servers or Node.js build required.
+    title: Correct credential boundary
+    details: Separate Entra and server identities backed by Windows Credential Manager and SQLCipher.
+  - icon: 🚉
+    title: Native Windows experience
+    details: Avalonia desktop UI, managed sessions, notification-area mode, background sync, and themes.
 ---

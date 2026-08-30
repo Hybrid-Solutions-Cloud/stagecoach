@@ -1,7 +1,9 @@
 # Decisions
 
-- **Name `stagecoach` (no `azure-` prefix)** — operator choice, 2026-08-23; org context already scopes it.
-- **Frontend stays one file** (`stagecoach.html`, vendored UMD React + htm) — no build pipeline without an explicit operator decision.
-- **PowerShell fires every session** — UI clicks call the local API, which spawns `pwsh` running the connection cmdlet; the browser never executes commands.
-- **Private repo at creation** — per HCS governance "private by default"; publish is a later deliberate decision.
-- **Credential order** — LAPS (auto-rotated) beats a stale Key Vault copy when both exist; save-to-vault write-back is opt-in and off by default.
+- Native Windows Avalonia/.NET 10 application; no browser UI or localhost server.
+- Per-Entra-identity isolated `AZURE_CONFIG_DIR` because supported Bastion and Arc connection paths are Azure CLI based.
+- Entra identities and target/relay connection identities are separate models.
+- SQLCipher metadata database with a DPAPI CurrentUser-protected key; passwords remain in Windows Credential Manager.
+- New tenants and subscriptions are excluded until explicitly enabled.
+- Discovery is read-only. WindowsOpenSSH Arc deployment is the only v1 Azure write and requires a two-step UI confirmation.
+- Managed helper lifetime and temporary RDP credential cleanup are part of connection correctness.
