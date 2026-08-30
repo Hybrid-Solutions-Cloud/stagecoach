@@ -1,53 +1,74 @@
-# Repo intent — stagecoach
+# Repo intent — Stagecoach
 
-**One login. Every VM. One click.**
+**One identity hub. Every reachable machine. One click.**
 
-## What this repo is
+## Product
 
-Stagecoach is a simple, clickable local tool for operators who RDP/SSH into many
-kinds of Azure-connected machines every day. You sign in once with an Entra ID
-account; Stagecoach scans every tenant that identity belongs to and lists every
-VM you can actually reach; clicking one opens the right kind of session with
-your current authentication:
+Stagecoach is an installable Windows desktop application for experienced administrators who move
+between Azure estates. An operator connects one or more Microsoft Entra identities, explicitly
+selects the tenants and subscriptions that each identity may scan, and receives one searchable
+estate of Azure virtual machines, Azure Arc-enabled servers, and Azure Local virtual machines.
 
-- **Azure VMs behind Azure Bastion** — `az network bastion rdp / ssh / tunnel`
-- **Azure Arc-enabled servers** (including Azure Local VMs) — `az ssh arc [--rdp]`
-- **Plain Azure VMs** with direct reachability — `az ssh vm [--rdp]` / mstsc
+Selecting a machine launches its best supported RDP or SSH route. Stagecoach handles the Azure
+identity context, Bastion or Arc relay, target connection identity, temporary credential staging,
+background helper process, and cleanup. The normal path is one click after onboarding. Microsoft
+Entra Conditional Access, MFA, expired sessions, and platform limitations can still require user
+interaction; Stagecoach must explain those cases rather than imply that it bypasses them.
 
-It replaces the pile of per-target "parachute" scripts with one launcher that
-still fires PowerShell underneath: every connect click spawns `pwsh` running
-`Connect-StagecoachVM`, which invokes the right `az` command.
+## Authoritative shape
 
-## Shape
+- **Desktop:** Avalonia on .NET 10 LTS, packaged for Windows x64.
+- **Azure identities:** one isolated Azure CLI configuration directory per connected identity.
+  Azure CLI uses Windows Web Account Manager and an encrypted MSAL cache. Stagecoach never reuses
+  or changes the operator's default `~/.azure` profile.
+- **Scope:** tenants and subscriptions are discovered per identity and must be explicitly enabled.
+- **Discovery:** Azure Resource Graph correlates VMs, Arc machines, NICs, IPs, VM extensions,
+  virtual networks, peerings, Bastion hosts, and Arc connectivity prerequisites.
+- **Connection identities:** domain, local, and Entra target accounts are separate from Azure
+  identities. Usernames and mappings are local metadata; passwords are stored only in Windows
+  Credential Manager or resolved just in time from an approved provider.
+- **Connections:** Azure CLI extensions, OpenSSH, and MSTSC are orchestrated as managed child
+  processes. Bastion and Arc helpers are kept in the background and cleaned up with the session.
+- **State:** non-secret metadata is cached locally for instant startup, search, favorites, recents,
+  identity scope, mappings, settings, and diagnostics.
+- **Lifecycle:** minimize/close-to-notification-area, background refresh, live sessions, and
+  configurable theme/accent behavior.
 
-- **Backend:** PowerShell 7 + Pode, bound to `127.0.0.1` only. Doubles as a
-  plain PowerShell module usable without the UI.
-- **Frontend:** one static `stagecoach.html` — single-file React (vendored UMD
-  + htm), no build pipeline, no Node dependency.
-- **Credentials:** resolver chain Entra Windows LAPS → Key Vault secret →
-  manual prompt. Nothing is ever persisted by Stagecoach; reads use the
-  operator's own RBAC and land in the vault audit log.
-- **Sessions:** long-running tunnel/relay helpers run hidden or minimized as
-  managed background processes — parallel sessions on a port pool, watchdog,
-  orphan reaping, one-click reconnect. No leftover console windows.
+## First-run experience
 
-## What this repo is not
+1. Validate Windows, Azure CLI, OpenSSH, MSTSC, and required CLI extensions.
+2. Offer **Use my Windows account** (Azure CLI WAM) or **Add another Entra account**.
+3. Enumerate the connected account's tenants and subscriptions.
+4. Require the operator to select scan scope.
+5. Scan and open the estate screen.
+6. Prompt to create connection identity mappings only when a discovered environment requires one.
 
-- Not a hosted service and not multi-user — it runs on the operator's own
-  workstation with the operator's own tokens.
-- Not a credential store — no secrets, passwords, or IDs are ever committed or
-  persisted (HCS hard rule).
-- Not a replacement for azure-scout — scout finds and assesses the estate;
-  stagecoach takes you to a machine in it.
+## Security boundaries
 
-## Where things are
+- No passwords, tokens, tenant IDs, subscription IDs, or live resource identifiers are committed.
+- No target password is stored in SQLite, JSON, logs, command lines, process arguments, or an RDP
+  file. Windows Credential Manager is the default secret store.
+- Azure CLI profiles are isolated under the current user's local application-data directory.
+- Diagnostics contain stable local correlation IDs and redacted error categories, not credentials
+  or access tokens.
+- Discovery is read-only. Installing Arc/OpenSSH/connectivity prerequisites is a governed Azure
+  write: Stagecoach shows a preview and requires explicit confirmation for the exact target.
+- A connection never silently falls back to a different Azure or target identity.
 
-- The full research, architecture, and delivery plan: `pmo/plans/stagecoach-design.md`
-- Docs site (VitePress, planned): `docs/`
-- Governance: HCS standards via the HCS Governance MCP (`bootstrap(repo="stagecoach", ...)`);
-  offline fallback digest in `AGENTS.md`
+## Non-goals
+
+- Not a hosted service or shared credential broker.
+- Not a general Azure inventory/governance platform.
+- Not an authorization bypass; operators must already hold required Azure RBAC and in-guest rights.
+- Not a replacement for Azure Bastion, Azure Arc, Azure CLI, OpenSSH, MSTSC, LAPS, or Key Vault.
+- Not a PowerShell/Pode/browser application. The earlier web design is superseded.
+
+## Authority
+
+The accepted native-Windows design is `pmo/plans/stagecoach-design.md`; delivery order and exit
+criteria are in `pmo/plans/stagecoach-implementation-plan.md`.
 
 ## Status
 
-Bootstrap. Plan accepted; implementation phases 0–4 are defined in the plan and
-tracked via ADO work items (`AB#<id>`) once the Epic/Feature is created.
+The native-Windows implementation is in release validation. Previous WPF and PowerShell/web
+prototypes are not accepted release evidence.

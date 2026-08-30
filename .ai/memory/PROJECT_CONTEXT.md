@@ -1,11 +1,5 @@
 # Project context
 
-Stagecoach: local Entra ID-authenticated one-click RDP/SSH launcher for Azure
-VMs behind Bastion, Arc-enabled servers (incl. Azure Local), and
-direct-reachable Azure VMs. PS7 + Pode localhost backend (also a plain module);
-single-file React frontend (vendored UMD + htm, no build step). Every connect
-click spawns `pwsh` running `Connect-StagecoachVM`. Credential resolver:
-Entra Windows LAPS → Key Vault → prompt. Background session manager keeps
-tunnel/relay helpers hidden/minimized with watchdog + port pool.
+Stagecoach is a native Windows Avalonia/.NET 10 desktop application modeled on Vault Prospector. It manages multiple isolated Azure CLI/Entra profiles, explicit tenant/subscription discovery scope, a merged Azure VM/Bastion/Arc/Azure Local estate, separately mapped target credentials, and managed one-click RDP/SSH sessions.
 
-Authoritative plan: `pmo/plans/stagecoach-design.md`.
+The former PowerShell/Pode/single-file React design and incomplete WPF prototype are superseded. The accepted authority is `pmo/plans/stagecoach-design.md`.

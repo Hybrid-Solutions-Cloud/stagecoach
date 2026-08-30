@@ -1,33 +1,18 @@
-# Connection Routes & Targets
+# Connection routes
 
-Stagecoach automatically routes remote sessions through the optimal connection method for each Azure-connected target.
+| Target | Route | Behavior |
+|---|---|---|
+| Windows Azure VM with public IP | Direct RDP | Stages mapped Windows credential and starts `mstsc.exe` |
+| Linux Azure VM with public IP | Direct SSH | Starts Windows Terminal or `cmd.exe` with OpenSSH |
+| Windows Azure VM behind Standard+ Bastion | Bastion tunnel RDP | Starts an Azure CLI tunnel, waits for the loopback port, then starts RDP |
+| Azure VM with Entra-native Bastion flow | Bastion native RDP | Starts the Bastion native client; Entra/MFA interaction can still be required |
+| Windows Arc/Azure Local | Arc RDP | Runs `az ssh arc --rdp`, with separate relay and target account mappings supported |
+| Linux Arc/Azure Local | Arc SSH | Runs `az ssh arc` with the owning Entra profile |
 
----
+Stagecoach prefers a ready Bastion tunnel, then Arc RDP, then interactive native routes, then direct routes. The operator can choose another discovered route in the Estate grid.
 
-## 1. Azure Bastion Native Client
+One click means Stagecoach performs routing, profile selection, credential lookup, helper startup, and client launch. It does not suppress security controls that demand interaction.
 
-For Azure virtual machines in VNets protected by Azure Bastion:
+## Arc readiness
 
-- **Command Used:** `az network bastion rdp --name <Bastion> --resource-group <RG> --target-resource-id <VMId>`
-- **Prerequisites:** Bastion Standard SKU or higher with `enableTunneling=true`.
-- **User Experience:** Spawns `mstsc.exe` tunneling through the Bastion gateway without opening public IPs or inbound ports on the target VM.
-
----
-
-## 2. Azure Arc-Enabled Servers & Azure Local VMs
-
-For on-premises Windows Servers, VMware VMs, Hyper-V, and bare-metal nodes connected via Azure Arc:
-
-- **Command Used:** `az ssh arc --resource-group <RG> --name <MachineName> --local-user <User> --rdp`
-- **How It Works:** Establishes an outbound SSH relay through the Azure Arc agent (`himds`) and Hybrid Connectivity endpoint, then launches MSTSC over the tunnel.
-- **Active Directory Domain Accounts:** Stagecoach formats the `--local-user` argument as `"DOMAIN\Username"`, authenticating seamlessly against on-premises Active Directory domain controllers.
-
----
-
-## 3. Direct-Reachable Azure VMs
-
-For VMs accessible via ExpressRoute, site-to-site VPN, or public IP:
-
-- **Command Used:** `mstsc /v:<TargetIP>` or `az ssh vm --rdp`
-- **User Experience:** Directly launches Remote Desktop to the VM's private or public IP address.
-
+Arc relay requires a connected Arc agent, supported agent version, Hybrid Connectivity endpoint/service configuration, a running target SSH service, and client-side Azure CLI/OpenSSH prerequisites. WindowsOpenSSH extension installation is an Azure write and therefore appears only behind the **Prepare Arc** preview and explicit **Apply approved change** action.

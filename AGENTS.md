@@ -2,9 +2,9 @@
 
 ## What this repo is
 
-Stagecoach: a local, Entra ID-authenticated one-click RDP/SSH launcher for
-Azure VMs behind Bastion, Azure Arc-enabled servers, and direct-reachable
-Azure VMs. PowerShell 7 + Pode backend, single-file React frontend. Read
+Stagecoach: an installable native Windows one-click RDP/SSH launcher for Azure
+VMs behind Bastion, Azure Arc/Azure Local machines, and direct-reachable Azure
+VMs. Avalonia + .NET 10 desktop app modeled on Vault Prospector. Read
 `REPO-INTENT.md` first, then the accepted plan at
 `pmo/plans/stagecoach-design.md`.
 
@@ -54,10 +54,13 @@ the offline fallback.
 
 ## Repo-specific rules
 
-- The frontend stays **one file** (`stagecoach.html`) with vendored UMD React —
-  do not introduce a Node build pipeline without an explicit operator decision.
-- Every session-launching path goes through `pwsh` running a Stagecoach cmdlet;
-  the browser/UI never executes commands itself.
+- The accepted product is a native Windows application. The earlier
+  PowerShell/Pode/single-file React design is superseded.
+- Azure identity profiles use isolated Azure CLI configuration directories;
+  never reuse or modify the operator's default Azure CLI profile.
+- Target passwords belong only in Windows Credential Manager or an explicitly
+  configured just-in-time provider; never SQLite, JSON, logs, arguments, or RDP files.
+- Every helper/client process is owned by the session registry and cleaned up.
 - Stagecoach is read-only against Azure (discovery reads + connection
   establishment). Any Azure write operation requires explicit operator
   confirmation and an explicit opt-in UI path.

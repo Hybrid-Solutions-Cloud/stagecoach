@@ -1,52 +1,52 @@
-# Quickstart Guide
+# Quickstart
 
-Get up and running with Stagecoach in less than 2 minutes.
+## Install and open
 
----
+Install the MSI, extract the self-contained ZIP, or run a repository build with `pwsh ./scripts/Run.ps1 -Configuration Release`. Stagecoach is a native desktop app; it does not start a local web server.
 
-## Prerequisites
+On first launch, open **Settings** and review workstation readiness. **Install / update local CLI extensions** installs the `resource-graph`, `ssh`, and `connectedmachine` Azure CLI extensions in Stagecoach's shared extension directory. Bastion commands ship with the current Azure CLI and are checked separately.
 
-Before running Stagecoach, ensure your local workstation has:
+## Add an Entra identity
 
-1. **PowerShell 7+** (`pwsh`)
-2. **Azure CLI** (`az`) installed and authenticated:
-   ```powershell
-   az login
-   ```
-3. **Azure CLI Extensions:**
-   ```powershell
-   az extension add --name ssh
-   az extension add --name bastion
-   ```
+1. Open **Identities & scope**.
+2. Enter an optional friendly name.
+3. Choose **Use my Windows account / choose account** for Windows Web Account Manager, or **Use device code instead** when policy or an RDP session makes that flow preferable.
+4. Complete Microsoft sign-in.
+5. Review the discovered tenants and subscriptions. Include only the scope Stagecoach should scan.
+6. Repeat for every Entra identity you operate.
 
----
+Each identity has its own `AZURE_CONFIG_DIR`, so account selection is deterministic and one account cannot silently replace another.
 
-## Installation & Launch
+## Add target accounts
 
-### 1. Import the Module
-Clone the repository and import the module into your PowerShell session:
+Open **Connection identities** and create the accounts used inside servers—for example `CORP\admin`, `user@corp.example.com`, or `.\localadmin`. A password is optional for prompt-only, Entra, or SSH-key profiles. Passwords are written to Windows Credential Manager, not the Stagecoach database.
 
-```powershell
-Import-Module ./src/AzureStagecoach/AzureStagecoach.psd1 -Force
-```
+Map each identity to one or more scopes. Specific mappings win over broad mappings:
 
-### 2. Launch the Stagecoach Dashboard
-Start the local server and launch the web interface in your default browser:
+1. Machine
+2. Tag (`key=value`)
+3. Domain
+4. Resource group
+5. Subscription
+6. Tenant
 
-```powershell
-Start-Stagecoach
-```
+For Arc RDP, a mapping can be marked **Arc SSH relay identity**. This lets the SSH tunnel use a different account from the Windows account passed to Remote Desktop.
 
-This launches the local listener at `http://127.0.0.1:8085/` and opens the single-file React interface.
+## Discover and connect
 
----
+Choose **Sync estate**. The Estate tab merges machines discovered through every enabled identity while retaining every valid access path. Select a route in the row when you need to override the preferred route, then choose **Connect**.
 
-## Connecting to Your First Machine
+If a Windows Arc or Azure Local machine lacks WindowsOpenSSH, select it and choose **Prepare Arc**. Review the exact extension deployment under **Settings**, then explicitly apply or cancel it. Sync again after Azure reports completion.
 
-1. **Scan Your Estate:** Click **"Scan Estate"** in the top navigation bar. Stagecoach queries Azure Resource Graph across all accessible subscriptions.
-2. **Review Auto-Categorized Machines:**
-   - **Domain-Joined Arc Servers:** Highlighted with a blue badge (`CORP.CONTOSO.COM`) and pre-filled with the domain admin account.
-   - **Workgroup Arc Servers:** Highlighted with a yellow badge (`Workgroup`) and matched against per-VM Key Vault secrets.
-   - **Bastion Azure VMs:** Highlighted with a cyan badge.
-3. **Launch RDP:** Click **Connect** on any machine row, verify the target username in the drawer, and click **"Launch 1-Click RDP"**. Native Windows Remote Desktop (`mstsc.exe`) will open automatically!
+## Required access
 
+This tool is intended for administrators who already hold the necessary access. Stagecoach does not grant roles or activate PIM.
+
+- Azure Resource Graph read access to each selected subscription
+- Reader access to inventory resources, NICs, VNets, peerings, Bastion, Arc machines, and extensions
+- Bastion Reader and Virtual Machine login permissions appropriate to the selected authentication method
+- `Microsoft.HybridConnectivity/endpoints/connect/action` and the documented Arc SSH permissions for Arc relay
+- Contributor or equivalent extension-write rights only when deploying WindowsOpenSSH
+- A valid target-machine account with Remote Desktop or SSH logon rights
+
+Conditional Access, MFA, PIM, network policy, server policy, and endpoint protection remain authoritative.

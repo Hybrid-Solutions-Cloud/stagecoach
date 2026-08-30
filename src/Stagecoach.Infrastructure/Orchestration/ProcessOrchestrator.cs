@@ -1,104 +1,398 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
-using Stagecoach.Core.Interfaces;
-using Stagecoach.Core.Models;
+using System.Net.Sockets;
+using Stagecoach.Core;
+using Stagecoach.Infrastructure.Security;
 
 namespace Stagecoach.Infrastructure.Orchestration;
 
-public class ProcessOrchestrator : IProcessOrchestrator
+public sealed class ProcessOrchestrator(
+    IAzureCliRunner cli,
+    IConnectionCredentialStore credentialStore,
+    IMetadataStore metadataStore) : IConnectionService
 {
-    private readonly Dictionary<string, StagecoachSession> _sessions = new();
+    private readonly ConcurrentDictionary<Guid, SessionRuntime> _sessions = new();
 
-    public Task<StagecoachSession> ConnectAsync(StagecoachMachine machine, string username, string? password = null, CancellationToken cancellationToken = default)
+    public async Task<ConnectionSession> ConnectAsync(
+        MachineRecord machine,
+        AzureAccessPath accessPath,
+        AzureIdentityProfile azureIdentity,
+        ConnectionIdentityProfile? targetIdentity,
+        ConnectionIdentityProfile? relayIdentity,
+        CancellationToken cancellationToken = default)
     {
-        var session = new StagecoachSession
+        if (accessPath.IdentityId != azureIdentity.Id)
+            throw new InvalidOperationException("The selected Azure identity does not own this access path.");
+        if (accessPath.Readiness is ReadinessState.MissingPrerequisite or ReadinessState.Offline or ReadinessState.PermissionDenied or ReadinessState.Unsupported)
+            throw new InvalidOperationException(accessPath.Reason);
+
+        var session = new ConnectionSession(
+            Guid.NewGuid(), machine.ResourceId, machine.Name, accessPath.Route, azureIdentity.Id,
+            targetIdentity?.Id, DateTimeOffset.UtcNow, SessionState.Starting, SafeStatus: "Preparing connection");
+        var runtime = new SessionRuntime(session);
+        if (!_sessions.TryAdd(session.Id, runtime)) throw new InvalidOperationException("A session ID collision occurred.");
+
+        try
         {
-            TargetId = machine.Id,
-            TargetName = machine.Name
-        };
-
-        if (machine.Kind == TargetKind.ArcServer)
-        {
-            session.Method = "ArcSshRelay";
-            var user = !string.IsNullOrWhiteSpace(username) ? username : (machine.DomainType == DomainType.ActiveDirectory ? $"{machine.DomainName}\\Administrator" : ".\\Administrator");
-            var args = $"ssh arc --resource-group \"{machine.ResourceGroup}\" --name \"{machine.Name}\" --local-user \"{user}\" --rdp";
-
-            var psi = new ProcessStartInfo
+            switch (accessPath.Route)
             {
-                FileName = "az",
-                Arguments = args,
-                UseShellExecute = true,
-                WindowStyle = ProcessWindowStyle.Normal
-            };
-
-            var proc = Process.Start(psi);
-            if (proc != null)
-            {
-                session.HelperProcessId = proc.Id;
-                session.State = SessionState.Active;
+                case ConnectionRouteKind.DirectRdp:
+                    await StartDirectRdpAsync(runtime, machine, targetIdentity, cancellationToken);
+                    break;
+                case ConnectionRouteKind.BastionTunnelRdp:
+                    await StartBastionTunnelRdpAsync(runtime, machine, accessPath, azureIdentity, targetIdentity, cancellationToken);
+                    break;
+                case ConnectionRouteKind.BastionRdp:
+                    await StartBastionNativeRdpAsync(runtime, machine, accessPath, azureIdentity, cancellationToken);
+                    break;
+                case ConnectionRouteKind.ArcRdp:
+                    await StartArcRdpAsync(runtime, machine, accessPath, azureIdentity, targetIdentity, relayIdentity, cancellationToken);
+                    break;
+                case ConnectionRouteKind.DirectSsh:
+                case ConnectionRouteKind.BastionSsh:
+                case ConnectionRouteKind.ArcSsh:
+                    await StartSshAsync(runtime, machine, accessPath, azureIdentity, targetIdentity, cancellationToken);
+                    break;
+                default:
+                    throw new NotSupportedException($"Connection route {accessPath.Route} is not supported.");
             }
+            await metadataStore.RecordConnectionAsync(machine.ResourceId, cancellationToken);
+            return runtime.Session;
         }
-        else if (machine.Kind == TargetKind.AzureVM)
+        catch
         {
-            if (!string.IsNullOrWhiteSpace(machine.BastionHostId))
+            runtime.Session = runtime.Session with { State = SessionState.Failed, SafeStatus = "Connection launch failed" };
+            await runtime.DisposeAsync();
+            throw;
+        }
+    }
+
+    public Task<IReadOnlyList<ConnectionSession>> GetSessionsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<ConnectionSession>>(_sessions.Values
+            .Select(item => item.Session).OrderByDescending(item => item.StartedAt).ToArray());
+    }
+
+    public async Task StopAsync(Guid sessionId, CancellationToken cancellationToken = default)
+    {
+        if (!_sessions.TryRemove(sessionId, out var runtime)) return;
+        runtime.Session = runtime.Session with { State = SessionState.Stopping, SafeStatus = "Stopping" };
+        await runtime.StopAsync(cancellationToken);
+        runtime.Session = runtime.Session with { State = SessionState.Stopped, SafeStatus = "Stopped" };
+        await runtime.DisposeAsync();
+    }
+
+    private async Task StartDirectRdpAsync(SessionRuntime runtime, MachineRecord machine, ConnectionIdentityProfile? targetIdentity, CancellationToken cancellationToken)
+    {
+        var endpoint = machine.PublicIpAddress ?? machine.PrivateIpAddress
+            ?? throw new InvalidOperationException("The selected machine has no direct address.");
+        runtime.CredentialLease = await StageCredentialAsync(endpoint, targetIdentity, cancellationToken);
+        runtime.Client = StartMstsc(endpoint, targetIdentity?.Username);
+        runtime.Session = runtime.Session with { State = SessionState.Active, ClientProcessId = runtime.Client.Id, SafeStatus = $"RDP {endpoint}" };
+        _ = WatchClientAsync(runtime);
+    }
+
+    private async Task StartBastionTunnelRdpAsync(
+        SessionRuntime runtime,
+        MachineRecord machine,
+        AzureAccessPath accessPath,
+        AzureIdentityProfile identity,
+        ConnectionIdentityProfile? targetIdentity,
+        CancellationToken cancellationToken)
+    {
+        var (resourceGroup, name) = ParseAzureResource(accessPath.BastionResourceId, "bastionHosts");
+        var port = ReservePort();
+        runtime.Helper = await cli.StartBackgroundAsync(identity.AzureConfigDirectory,
+            ["network", "bastion", "tunnel", "--name", name, "--resource-group", resourceGroup,
+             "--subscription", accessPath.SubscriptionId, "--target-resource-id", machine.ResourceId,
+             "--resource-port", "3389", "--port", port.ToString(System.Globalization.CultureInfo.InvariantCulture)],
+            cancellationToken: cancellationToken);
+        await WaitForPortAsync(port, runtime.Helper, cancellationToken);
+        var endpoint = $"localhost:{port}";
+        runtime.CredentialLease = await StageCredentialAsync(endpoint, targetIdentity, cancellationToken);
+        runtime.Client = StartMstsc(endpoint, targetIdentity?.Username);
+        runtime.Session = runtime.Session with
+        {
+            State = SessionState.Active,
+            HelperProcessId = runtime.Helper.ProcessId,
+            ClientProcessId = runtime.Client.Id,
+            LocalPort = port,
+            SafeStatus = $"Bastion tunnel on localhost:{port}",
+        };
+        _ = WatchClientAsync(runtime);
+    }
+
+    private async Task StartBastionNativeRdpAsync(
+        SessionRuntime runtime,
+        MachineRecord machine,
+        AzureAccessPath accessPath,
+        AzureIdentityProfile identity,
+        CancellationToken cancellationToken)
+    {
+        var (resourceGroup, name) = ParseAzureResource(accessPath.BastionResourceId, "bastionHosts");
+        runtime.Helper = await cli.StartBackgroundAsync(identity.AzureConfigDirectory,
+            ["network", "bastion", "rdp", "--name", name, "--resource-group", resourceGroup,
+             "--subscription", accessPath.SubscriptionId, "--target-resource-id", machine.ResourceId, "--enable-mfa"],
+            cancellationToken: cancellationToken);
+        runtime.Session = runtime.Session with
+        {
+            State = SessionState.InteractionRequired,
+            HelperProcessId = runtime.Helper.ProcessId,
+            SafeStatus = "Bastion native RDP may require Microsoft Entra authentication",
+        };
+        _ = WatchHelperAsync(runtime);
+    }
+
+    private async Task StartArcRdpAsync(
+        SessionRuntime runtime,
+        MachineRecord machine,
+        AzureAccessPath accessPath,
+        AzureIdentityProfile identity,
+        ConnectionIdentityProfile? targetIdentity,
+        ConnectionIdentityProfile? relayIdentity,
+        CancellationToken cancellationToken)
+    {
+        relayIdentity ??= targetIdentity;
+        if (relayIdentity is null || string.IsNullOrWhiteSpace(relayIdentity.Username))
+            throw new InvalidOperationException("Arc RDP requires a mapped SSH relay identity.");
+        var environment = await BuildAskPassEnvironmentAsync(relayIdentity, cancellationToken);
+        runtime.CredentialLease = await StageCredentialAsync("localhost", targetIdentity, cancellationToken);
+        var arguments = new List<string>
+        {
+            "ssh", "arc", "--subscription", accessPath.SubscriptionId, "--resource-group", machine.ResourceGroup,
+            "--name", machine.Name, "--local-user", relayIdentity.Username, "--rdp",
+        };
+        if (!string.IsNullOrWhiteSpace(relayIdentity.SshPrivateKeyPath))
+        {
+            arguments.Add("--private-key-file");
+            arguments.Add(relayIdentity.SshPrivateKeyPath);
+        }
+        runtime.Helper = await cli.StartBackgroundAsync(identity.AzureConfigDirectory, arguments, environment, cancellationToken);
+        runtime.Session = runtime.Session with
+        {
+            State = accessPath.Readiness == ReadinessState.InteractionRequired ? SessionState.InteractionRequired : SessionState.Active,
+            HelperProcessId = runtime.Helper.ProcessId,
+            SafeStatus = "Arc RDP relay starting",
+        };
+        _ = WatchHelperAsync(runtime);
+    }
+
+    private async Task StartSshAsync(
+        SessionRuntime runtime,
+        MachineRecord machine,
+        AzureAccessPath path,
+        AzureIdentityProfile identity,
+        ConnectionIdentityProfile? connectionIdentity,
+        CancellationToken cancellationToken)
+    {
+        var terminal = FindWindowsTerminal();
+        var startInfo = new ProcessStartInfo { FileName = terminal, UseShellExecute = false };
+        startInfo.Environment["AZURE_CONFIG_DIR"] = identity.AzureConfigDirectory;
+        startInfo.Environment["AZURE_EXTENSION_DIR"] = StagecoachPaths.ExtensionDirectory;
+        if (Path.GetFileName(terminal).Equals("wt.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            startInfo.ArgumentList.Add("--window");
+            startInfo.ArgumentList.Add("new");
+        }
+        else
+        {
+            startInfo.ArgumentList.Add("/d");
+            startInfo.ArgumentList.Add("/s");
+            startInfo.ArgumentList.Add("/c");
+        }
+        if (path.Route == ConnectionRouteKind.DirectSsh)
+        {
+            startInfo.ArgumentList.Add("ssh.exe");
+            if (!string.IsNullOrWhiteSpace(connectionIdentity?.SshPrivateKeyPath))
             {
-                session.Method = "BastionNative";
-                var parts = machine.BastionHostId.Split('/');
-                var bastionName = parts[^1];
-                var bastionRg = parts[4];
-                var args = $"network bastion rdp --name \"{bastionName}\" --resource-group \"{bastionRg}\" --target-resource-id \"{machine.Id}\"";
-
-                var psi = new ProcessStartInfo
+                startInfo.ArgumentList.Add("-i");
+                startInfo.ArgumentList.Add(connectionIdentity.SshPrivateKeyPath);
+            }
+            var endpoint = machine.PublicIpAddress ?? machine.PrivateIpAddress ?? throw new InvalidOperationException("No direct SSH address is available.");
+            startInfo.ArgumentList.Add(string.IsNullOrWhiteSpace(connectionIdentity?.Username) ? endpoint : $"{connectionIdentity.Username}@{endpoint}");
+        }
+        else
+        {
+            startInfo.ArgumentList.Add("az");
+            if (path.Route == ConnectionRouteKind.ArcSsh)
+            {
+                startInfo.ArgumentList.Add("ssh"); startInfo.ArgumentList.Add("arc");
+                startInfo.ArgumentList.Add("--subscription"); startInfo.ArgumentList.Add(path.SubscriptionId);
+                startInfo.ArgumentList.Add("--resource-group"); startInfo.ArgumentList.Add(machine.ResourceGroup);
+                startInfo.ArgumentList.Add("--name"); startInfo.ArgumentList.Add(machine.Name);
+                if (!string.IsNullOrWhiteSpace(connectionIdentity?.Username))
                 {
-                    FileName = "az",
-                    Arguments = args,
-                    UseShellExecute = true
-                };
-
-                var proc = Process.Start(psi);
-                if (proc != null)
-                {
-                    session.HelperProcessId = proc.Id;
-                    session.State = SessionState.Active;
+                    startInfo.ArgumentList.Add("--local-user"); startInfo.ArgumentList.Add(connectionIdentity.Username);
                 }
             }
             else
             {
-                session.Method = "DirectMstsc";
-                var ip = !string.IsNullOrWhiteSpace(machine.PublicIpAddress) ? machine.PublicIpAddress : machine.PrivateIpAddress;
-                if (string.IsNullOrWhiteSpace(ip)) ip = machine.Name;
-
-                var proc = Process.Start("mstsc.exe", $"/v:{ip}");
-                if (proc != null)
-                {
-                    session.ClientProcessId = proc.Id;
-                    session.State = SessionState.Active;
-                }
+                var (resourceGroup, name) = ParseAzureResource(path.BastionResourceId, "bastionHosts");
+                startInfo.ArgumentList.Add("network"); startInfo.ArgumentList.Add("bastion"); startInfo.ArgumentList.Add("ssh");
+                startInfo.ArgumentList.Add("--name"); startInfo.ArgumentList.Add(name);
+                startInfo.ArgumentList.Add("--resource-group"); startInfo.ArgumentList.Add(resourceGroup);
+                startInfo.ArgumentList.Add("--subscription"); startInfo.ArgumentList.Add(path.SubscriptionId);
+                startInfo.ArgumentList.Add("--target-resource-id"); startInfo.ArgumentList.Add(machine.ResourceId);
+                startInfo.ArgumentList.Add("--auth-type"); startInfo.ArgumentList.Add("AAD");
             }
         }
-
-        _sessions[session.SessionId] = session;
-        return Task.FromResult(session);
+        runtime.Client = Process.Start(startInfo) ?? throw new InvalidOperationException("SSH terminal could not be started.");
+        runtime.Session = runtime.Session with { State = SessionState.Active, ClientProcessId = runtime.Client.Id, SafeStatus = "SSH terminal opened" };
+        _ = WatchClientAsync(runtime);
+        await Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<StagecoachSession>> GetActiveSessionsAsync()
+    private async Task<TemporaryCredentialLease?> StageCredentialAsync(string endpoint, ConnectionIdentityProfile? profile, CancellationToken cancellationToken)
     {
-        return Task.FromResult<IReadOnlyList<StagecoachSession>>(_sessions.Values.ToList());
+        if (profile is null || profile.Kind is ConnectionIdentityKind.MicrosoftEntra or ConnectionIdentityKind.SshKey or ConnectionIdentityKind.PromptOnly) return null;
+        var credential = await credentialStore.ReadAsync(profile.Id, cancellationToken)
+            ?? throw new InvalidOperationException($"The Windows credential for '{profile.DisplayName}' is missing.");
+        if (credentialStore is not WindowsCredentialManager windows)
+            throw new InvalidOperationException("The configured credential store cannot stage Remote Desktop credentials.");
+        return windows.StageRemoteDesktop(endpoint, credential.Username, credential.Password);
     }
 
-    public Task DisconnectSessionAsync(string sessionId)
+    private async Task<IReadOnlyDictionary<string, string>?> BuildAskPassEnvironmentAsync(ConnectionIdentityProfile profile, CancellationToken cancellationToken)
     {
-        if (_sessions.TryGetValue(sessionId, out var session))
+        if (!string.IsNullOrWhiteSpace(profile.SshPrivateKeyPath)) return null;
+        if (await credentialStore.ReadAsync(profile.Id, cancellationToken) is null) return null;
+        var askPass = Path.Combine(AppContext.BaseDirectory, "Stagecoach.AskPass.exe");
+        if (!File.Exists(askPass)) throw new InvalidOperationException("The Stagecoach SSH AskPass helper is missing.");
+        return new Dictionary<string, string>
         {
-            if (session.HelperProcessId > 0)
-            {
-                try { Process.GetProcessById(session.HelperProcessId).Kill(); } catch { }
-            }
-            if (session.ClientProcessId > 0)
-            {
-                try { Process.GetProcessById(session.ClientProcessId).Kill(); } catch { }
-            }
-            session.State = SessionState.Disconnected;
+            ["SSH_ASKPASS"] = askPass,
+            ["SSH_ASKPASS_REQUIRE"] = "force",
+            ["DISPLAY"] = "stagecoach",
+            ["STAGECOACH_ASKPASS_PROFILE"] = profile.Id.ToString("D"),
+        };
+    }
+
+    private async Task WatchClientAsync(SessionRuntime runtime)
+    {
+        try
+        {
+            if (runtime.Client is not null) await runtime.Client.WaitForExitAsync();
         }
-        return Task.CompletedTask;
+        finally
+        {
+            await StopAsync(runtime.Session.Id);
+        }
+    }
+
+    private async Task WatchHelperAsync(SessionRuntime runtime)
+    {
+        if (runtime.Helper is null) return;
+        var exitCode = await runtime.Helper.Completion;
+        if (_sessions.TryGetValue(runtime.Session.Id, out _))
+            runtime.Session = runtime.Session with
+            {
+                State = exitCode == 0 ? SessionState.Stopped : SessionState.Failed,
+                SafeStatus = exitCode == 0 ? "Session ended" : "Connection helper exited",
+            };
+    }
+
+    private static Process StartMstsc(string endpoint, string? username)
+    {
+        var directory = Path.Combine(StagecoachPaths.RootDirectory, "sessions");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, $"{Guid.NewGuid():N}.rdp");
+        var lines = new List<string>
+        {
+            $"full address:s:{endpoint}",
+            "prompt for credentials:i:0",
+            "authentication level:i:2",
+            "enablecredsspsupport:i:1",
+            "redirectclipboard:i:1",
+            "screen mode id:i:2",
+        };
+        if (!string.IsNullOrWhiteSpace(username)) lines.Add($"username:s:{username}");
+        File.WriteAllLines(path, lines);
+        var info = new ProcessStartInfo { FileName = "mstsc.exe", UseShellExecute = false };
+        info.ArgumentList.Add(path);
+        var process = Process.Start(info) ?? throw new InvalidOperationException("Remote Desktop Connection could not be started.");
+        process.EnableRaisingEvents = true;
+        process.Exited += (_, _) => TryDelete(path);
+        return process;
+    }
+
+    private static int ReservePort()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
+
+    private static async Task WaitForPortAsync(int port, IManagedCommand helper, CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(45));
+        while (true)
+        {
+            if (helper.Completion.IsCompleted)
+                throw new InvalidOperationException("The Bastion tunnel exited before its local endpoint became ready.");
+            try
+            {
+                using var client = new TcpClient();
+                await client.ConnectAsync("127.0.0.1", port, timeout.Token);
+                return;
+            }
+            catch (SocketException)
+            {
+                await Task.Delay(250, timeout.Token);
+            }
+        }
+    }
+
+    private static (string ResourceGroup, string Name) ParseAzureResource(string? resourceId, string expectedType)
+    {
+        if (string.IsNullOrWhiteSpace(resourceId)) throw new InvalidOperationException("The access path is missing its Azure resource.");
+        var parts = resourceId.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var rgIndex = Array.FindIndex(parts, part => part.Equals("resourceGroups", StringComparison.OrdinalIgnoreCase));
+        var typeIndex = Array.FindIndex(parts, part => part.Equals(expectedType, StringComparison.OrdinalIgnoreCase));
+        if (rgIndex < 0 || rgIndex + 1 >= parts.Length || typeIndex < 0 || typeIndex + 1 >= parts.Length)
+            throw new InvalidOperationException("The access path contains an invalid Azure resource identifier.");
+        return (parts[rgIndex + 1], parts[typeIndex + 1]);
+    }
+
+    private static string FindWindowsTerminal()
+    {
+        var alias = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WindowsApps", "wt.exe");
+        return File.Exists(alias) ? alias : "cmd.exe";
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private sealed class SessionRuntime(ConnectionSession session) : IAsyncDisposable
+    {
+        public ConnectionSession Session { get; set; } = session;
+        public IManagedCommand? Helper { get; set; }
+        public Process? Client { get; set; }
+        public TemporaryCredentialLease? CredentialLease { get; set; }
+
+        public async Task StopAsync(CancellationToken cancellationToken)
+        {
+            if (Client is { HasExited: false })
+            {
+                try { Client.Kill(entireProcessTree: true); await Client.WaitForExitAsync(cancellationToken); }
+                catch (InvalidOperationException) { }
+                catch (System.ComponentModel.Win32Exception) { }
+            }
+            if (Helper is not null) await Helper.StopAsync(cancellationToken);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            CredentialLease?.Dispose();
+            Client?.Dispose();
+            if (Helper is not null) await Helper.DisposeAsync();
+        }
     }
 }
