@@ -6,10 +6,12 @@
 
 `feature/native-windows-redesign`
 
+Pull request: <https://github.com/Hybrid-Solutions-Cloud/stagecoach/pull/1>
+
 ### Azure DevOps
 
-- Epic AB#7937
-- Features AB#7938, AB#7939, AB#7940, and AB#7941
+- Closed Epic AB#7937
+- Closed Features AB#7938, AB#7939, AB#7940, and AB#7941
 
 ### Outcome
 
