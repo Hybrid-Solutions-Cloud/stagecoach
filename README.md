@@ -6,6 +6,8 @@
 
 **One identity hub. Every reachable machine. One click.**
 
+**Documentation and downloads: [labs.hybridsolutions.cloud/stagecoach](https://labs.hybridsolutions.cloud/stagecoach/)**
+
 Stagecoach is an installable native Windows application for administrators who work across
 multiple Microsoft Entra tenants. Connect one or more Entra accounts, choose the tenants and
 subscriptions each may scan, and get a single filterable list of every Azure VM, Azure Arc-enabled

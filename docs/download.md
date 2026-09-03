@@ -2,6 +2,9 @@
 
 Windows 10 19041 or later, x64.
 
+This page lives at
+<https://labs.hybridsolutions.cloud/stagecoach/download.html>.
+
 ## Installer (recommended)
 
 <div class="download-row">

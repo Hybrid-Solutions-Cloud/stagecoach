@@ -68,6 +68,12 @@ interaction; Stagecoach must explain those cases rather than imply that it bypas
 The accepted native-Windows design is `pmo/plans/stagecoach-design.md`; delivery order and exit
 criteria are in `pmo/plans/stagecoach-implementation-plan.md`.
 
+## Published site
+
+<https://labs.hybridsolutions.cloud/stagecoach/> — documentation and downloads. The domain is a
+Cloudflare Worker proxying the organisation's GitHub Pages origin with the path preserved, so this
+repo remains a Pages project site with `base: '/stagecoach/'` and carries no `CNAME` file.
+
 ## Status
 
 The native-Windows implementation is in release validation. Previous WPF and PowerShell/web
