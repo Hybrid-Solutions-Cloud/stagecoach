@@ -8,17 +8,25 @@ public sealed class AzureCliRunner : IAzureCliRunner
 {
     private static readonly TimeSpan ExitGrace = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// How long an interactive Microsoft sign-in may stay open before Stagecoach gives up. Long
+    /// enough for Conditional Access, MFA, and a device-code round trip; short enough that a prompt
+    /// which never appeared cannot wedge the application indefinitely.
+    /// </summary>
+    internal static readonly TimeSpan InteractiveTimeout = TimeSpan.FromMinutes(5);
+
     public Task<CommandResult> RunAsync(
         string azureConfigDirectory,
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken = default) =>
-        RunCoreAsync(azureConfigDirectory, arguments, interactive: false, cancellationToken);
+        RunCoreAsync(azureConfigDirectory, arguments, interactive: false, progress: null, cancellationToken);
 
     public Task<CommandResult> RunInteractiveAsync(
         string azureConfigDirectory,
         IReadOnlyList<string> arguments,
+        IProgress<string>? progress = null,
         CancellationToken cancellationToken = default) =>
-        RunCoreAsync(azureConfigDirectory, arguments, interactive: true, cancellationToken);
+        RunCoreAsync(azureConfigDirectory, arguments, interactive: true, progress, cancellationToken);
 
     public Task<IManagedCommand> StartBackgroundAsync(
         string azureConfigDirectory,
@@ -39,32 +47,59 @@ public sealed class AzureCliRunner : IAzureCliRunner
         string azureConfigDirectory,
         IReadOnlyList<string> arguments,
         bool interactive,
+        IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(azureConfigDirectory);
         Directory.CreateDirectory(azureConfigDirectory);
         StagecoachPaths.EnsureDirectories();
 
-        var startInfo = CreateStartInfo(azureConfigDirectory, arguments, createNoWindow: !interactive);
-        startInfo.RedirectStandardInput = !interactive;
-        startInfo.RedirectStandardOutput = !interactive;
-        startInfo.RedirectStandardError = !interactive;
+        // Output is captured for interactive commands too. It previously was not, which meant
+        // every 'az login' failure arrived as an empty string and every one of them produced the
+        // same unusable message. Standard input stays attached so a broker or browser flow is
+        // unaffected; only the two output pipes are read.
+        var startInfo = CreateStartInfo(azureConfigDirectory, arguments, createNoWindow: true);
+        startInfo.RedirectStandardInput = false;
+        startInfo.RedirectStandardOutput = true;
+        startInfo.RedirectStandardError = true;
 
         using var process = new Process { StartInfo = startInfo };
         if (!process.Start())
             throw new InvalidOperationException("Azure CLI could not be started.");
 
-        var stdoutTask = interactive ? Task.FromResult(string.Empty) : process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = interactive ? Task.FromResult(string.Empty) : process.StandardError.ReadToEndAsync(cancellationToken);
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        // Read stderr line by line so device-code instructions reach the operator while the sign-in
+        // is still open. Reading it only at exit would mean the code is shown after it is useless.
+        var stderrBuffer = new StringBuilder();
+        var stderrTask = PumpAsync(process.StandardError, stderrBuffer, progress, cancellationToken);
+
+        // An interactive sign-in that is never completed used to hang the caller forever, because
+        // the only cancellation source was a token the UI never supplied. Bound it.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (interactive) timeout.CancelAfter(InteractiveTimeout);
+
         try
         {
-            await process.WaitForExitAsync(cancellationToken);
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException) when (
+            interactive && timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            TryKillTree(process);
+            await WaitForExitGraceAsync(process);
+            var partial = Redact(stderrBuffer.ToString());
+            return new CommandResult(
+                -1,
+                string.Empty,
+                string.IsNullOrWhiteSpace(partial)
+                    ? $"Sign-in did not complete within {InteractiveTimeout.TotalMinutes:0} minutes. " +
+                      "No Microsoft sign-in prompt was completed. If no prompt appeared, use device-code sign-in."
+                    : partial);
         }
         catch (OperationCanceledException)
         {
             TryKillTree(process);
-            using var grace = new CancellationTokenSource(ExitGrace);
-            try { await process.WaitForExitAsync(grace.Token); } catch (OperationCanceledException) { }
+            await WaitForExitGraceAsync(process);
             throw;
         }
 
@@ -74,6 +109,104 @@ public sealed class AzureCliRunner : IAzureCliRunner
             Redact(await stderrTask));
     }
 
+    private static async Task WaitForExitGraceAsync(Process process)
+    {
+        using var grace = new CancellationTokenSource(ExitGrace);
+        try { await process.WaitForExitAsync(grace.Token); } catch (OperationCanceledException) { }
+    }
+
+    /// <summary>
+    /// Drains a stream line by line, keeping the whole thing for the caller and forwarding
+    /// operator-relevant lines (device codes, sign-in URLs) as they arrive.
+    /// </summary>
+    private static async Task<string> PumpAsync(
+        StreamReader reader,
+        StringBuilder buffer,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (await reader.ReadLineAsync(cancellationToken) is { } line)
+            {
+                buffer.AppendLine(line);
+                if (progress is not null && IsOperatorRelevant(line)) progress.Report(line.Trim());
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Whatever arrived before cancellation is still worth reporting.
+        }
+        catch (IOException)
+        {
+            // The pipe closes when the process is killed; not an error worth surfacing.
+        }
+
+        return buffer.ToString();
+    }
+
+    private static string? _resolvedCliPath;
+
+    /// <summary>
+    /// Finds the Azure CLI launcher. On Windows the CLI is <c>az.cmd</c>, and starting a process
+    /// with <c>UseShellExecute = false</c> goes through CreateProcess, which does no PATHEXT
+    /// resolution — so a bare "az" fails with "the system cannot find the file specified" on a
+    /// machine where the CLI is installed and working. The extensionless <c>az</c> shell script
+    /// that ships alongside it is not runnable by CreateProcess either, so it is skipped.
+    /// </summary>
+    internal static string ResolveAzureCliPath()
+    {
+        if (_resolvedCliPath is { } cached && File.Exists(cached)) return cached;
+
+        foreach (var candidate in EnumerateCandidates())
+        {
+            if (!File.Exists(candidate)) continue;
+            _resolvedCliPath = candidate;
+            return candidate;
+        }
+
+        throw new InvalidOperationException(
+            "Stagecoach could not find the Azure CLI (az.cmd) on this machine. Install it from " +
+            "https://aka.ms/installazurecliwindows, then reopen Stagecoach. If it is already " +
+            "installed, make sure its 'wbin' folder is on PATH for your user account.");
+    }
+
+    private static IEnumerable<string> EnumerateCandidates()
+    {
+        string[] names = ["az.cmd", "az.bat", "az.exe"];
+
+        var path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        foreach (var directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = directory.Trim().Trim('"');
+            if (trimmed.Length == 0) continue;
+            foreach (var name in names)
+            {
+                string candidate;
+                try { candidate = Path.Combine(trimmed, name); }
+                catch (ArgumentException) { continue; }
+                yield return candidate;
+            }
+        }
+
+        // Default installer locations, for the common case where PATH was not refreshed after install.
+        foreach (var root in new[]
+                 {
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                 })
+        {
+            if (string.IsNullOrEmpty(root)) continue;
+            foreach (var name in names)
+                yield return Path.Combine(root, "Microsoft SDKs", "Azure", "CLI2", "wbin", name);
+        }
+    }
+
+    private static bool IsOperatorRelevant(string line) =>
+        line.Contains("devicelogin", StringComparison.OrdinalIgnoreCase) ||
+        line.Contains("enter the code", StringComparison.OrdinalIgnoreCase) ||
+        line.Contains("To sign in", StringComparison.OrdinalIgnoreCase);
+
     private static ProcessStartInfo CreateStartInfo(
         string azureConfigDirectory,
         IReadOnlyList<string> arguments,
@@ -81,7 +214,7 @@ public sealed class AzureCliRunner : IAzureCliRunner
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = "az",
+            FileName = ResolveAzureCliPath(),
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,

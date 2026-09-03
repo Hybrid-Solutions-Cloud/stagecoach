@@ -8,7 +8,7 @@ This page lives at
 ## Installer (recommended)
 
 <div class="download-row">
-  <a class="download-button" href="https://github.com/Hybrid-Solutions-Cloud/stagecoach/releases/latest/download/Stagecoach-0.2.2-win-x64.msi">
+  <a class="download-button" href="https://github.com/Hybrid-Solutions-Cloud/stagecoach/releases/latest/download/Stagecoach-0.2.3-win-x64.msi">
     Download the MSI
   </a>
   <a class="download-alt" href="https://github.com/Hybrid-Solutions-Cloud/stagecoach/releases/latest">
@@ -22,7 +22,7 @@ Start menu shortcut, and upgrades cleanly over a previous version.
 ## Portable ZIP
 
 <div class="download-row">
-  <a class="download-button" href="https://github.com/Hybrid-Solutions-Cloud/stagecoach/releases/latest/download/Stagecoach-0.2.2-win-x64.zip">
+  <a class="download-button" href="https://github.com/Hybrid-Solutions-Cloud/stagecoach/releases/latest/download/Stagecoach-0.2.3-win-x64.zip">
     Download the ZIP
   </a>
 </div>
@@ -34,8 +34,8 @@ Self-contained — no .NET runtime required. Unpack it anywhere and run `Stageco
 Every release publishes a `.sha256` sidecar next to each file. Check it before running:
 
 ```powershell
-Get-FileHash .\Stagecoach-0.2.2-win-x64.msi -Algorithm SHA256
-# compare against Stagecoach-0.2.2-win-x64.msi.sha256
+Get-FileHash .\Stagecoach-0.2.3-win-x64.msi -Algorithm SHA256
+# compare against Stagecoach-0.2.3-win-x64.msi.sha256
 ```
 
 ::: warning Not code signed yet
@@ -70,7 +70,7 @@ authenticated digest before Windows Installer runs. See
 ```powershell
 git clone https://github.com/Hybrid-Solutions-Cloud/stagecoach.git
 cd stagecoach
-pwsh ./scripts/Package.ps1 -Version 0.2.2 -Installer
+pwsh ./scripts/Package.ps1 -Version 0.2.3 -Installer
 ```
 
 The ZIP and its checksum land in `artifacts/`; the MSI lands in `installer/bin/Release/`. See the

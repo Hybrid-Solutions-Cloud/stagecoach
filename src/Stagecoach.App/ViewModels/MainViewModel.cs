@@ -171,9 +171,15 @@ public partial class MainViewModel : ObservableObject
 
     private async Task AddIdentityAsync(bool useDeviceCode)
     {
-        await RunBusyAsync("Signing in with Microsoft", async () =>
+        // Device codes and sign-in URLs arrive while the sign-in is still open, so they have to be
+        // shown as they happen. Previously they went to a hidden console and the operator saw nothing.
+        var progress = new Progress<string>(line => StatusMessage = line);
+        await RunBusyAsync(
+            useDeviceCode
+                ? "Starting device-code sign-in — the code will appear here"
+                : "Signing in with Microsoft — complete the prompt Windows shows", async () =>
         {
-            var identity = await _identityService.AddAsync(NewIdentityName, useDeviceCode);
+            var identity = await _identityService.AddAsync(NewIdentityName, useDeviceCode, progress);
             NewIdentityName = string.Empty;
             await ReloadIdentitiesAsync();
             SelectedIdentity = Identities.FirstOrDefault(item => item.Profile.Id == identity.Id);
@@ -185,9 +191,10 @@ public partial class MainViewModel : ObservableObject
     private async Task ReauthenticateAsync(IdentityRow? row)
     {
         if (row is null) return;
+        var progress = new Progress<string>(line => StatusMessage = line);
         await RunBusyAsync($"Reauthenticating {row.DisplayName}", async () =>
         {
-            await _identityService.ReauthenticateAsync(row.Profile, useDeviceCode: false);
+            await _identityService.ReauthenticateAsync(row.Profile, useDeviceCode: false, progress);
             await ReloadIdentitiesAsync();
         });
     }

@@ -10,6 +10,7 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
     public async Task<AzureIdentityProfile> AddAsync(
         string displayName,
         bool useDeviceCode,
+        IProgress<string>? progress = null,
         CancellationToken cancellationToken = default)
     {
         var pendingId = Guid.NewGuid();
@@ -19,7 +20,7 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
         await ConfigureProfileAsync(configDirectory, cancellationToken);
         var arguments = new List<string> { "login", "--allow-no-subscriptions", "--output", "json" };
         if (useDeviceCode) arguments.Add("--use-device-code");
-        var result = await cli.RunInteractiveAsync(configDirectory, arguments, cancellationToken);
+        var result = await cli.RunInteractiveAsync(configDirectory, arguments, progress, cancellationToken);
         if (!result.Succeeded)
         {
             TryDeleteDirectory(Path.GetDirectoryName(configDirectory)!);
@@ -56,11 +57,12 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
     public async Task<AzureIdentityProfile> ReauthenticateAsync(
         AzureIdentityProfile identity,
         bool useDeviceCode,
+        IProgress<string>? progress = null,
         CancellationToken cancellationToken = default)
     {
         var arguments = new List<string> { "login", "--allow-no-subscriptions", "--output", "json" };
         if (useDeviceCode) arguments.Add("--use-device-code");
-        var result = await cli.RunInteractiveAsync(identity.AzureConfigDirectory, arguments, cancellationToken);
+        var result = await cli.RunInteractiveAsync(identity.AzureConfigDirectory, arguments, progress, cancellationToken);
         if (!result.Succeeded)
             return identity with
             {

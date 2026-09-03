@@ -51,7 +51,7 @@ public sealed class ArcRemediationServiceTests
             Calls.Add((azureConfigDirectory, arguments));
             return Task.FromResult(new CommandResult(0, string.Empty, string.Empty));
         }
-        public Task<CommandResult> RunInteractiveAsync(string azureConfigDirectory, IReadOnlyList<string> arguments, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<CommandResult> RunInteractiveAsync(string azureConfigDirectory, IReadOnlyList<string> arguments, IProgress<string>? progress = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IManagedCommand> StartBackgroundAsync(string azureConfigDirectory, IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string>? environment = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

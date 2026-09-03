@@ -7,9 +7,16 @@ public interface IAzureCliRunner
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Runs a command that may require a Microsoft sign-in prompt. <paramref name="progress"/>
+    /// receives operator-relevant lines — device codes and sign-in URLs — while the command is
+    /// still running, so they can be shown in the application rather than a hidden console.
+    /// Implementations must bound how long they wait for a sign-in that is never completed.
+    /// </summary>
     Task<CommandResult> RunInteractiveAsync(
         string azureConfigDirectory,
         IReadOnlyList<string> arguments,
+        IProgress<string>? progress = null,
         CancellationToken cancellationToken = default);
 
     Task<IManagedCommand> StartBackgroundAsync(
@@ -32,11 +39,13 @@ public interface IIdentityService
     Task<AzureIdentityProfile> AddAsync(
         string displayName,
         bool useDeviceCode,
+        IProgress<string>? progress = null,
         CancellationToken cancellationToken = default);
 
     Task<AzureIdentityProfile> ReauthenticateAsync(
         AzureIdentityProfile identity,
         bool useDeviceCode,
+        IProgress<string>? progress = null,
         CancellationToken cancellationToken = default);
 
     Task<IdentityInventory> RefreshInventoryAsync(
