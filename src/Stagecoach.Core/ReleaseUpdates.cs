@@ -59,7 +59,31 @@ public sealed class GitHubReleaseUpdateService(
     IUpdateInstallerLauncher installerLauncher) : IReleaseUpdateService
 {
     private const string ExpectedPublisher = "hcs-platform-app[bot]";
-    private const string ReleaseRepository = "Hybrid-Solutions-Cloud/stagecoach-releases";
+
+    /// <summary>
+    /// Where Stagecoach releases actually live. This previously pointed at a "-releases" repository
+    /// that was never created, so every update check failed with a 404 and the feature could not
+    /// work at all.
+    /// </summary>
+    private const string ReleaseRepository = "Hybrid-Solutions-Cloud/stagecoach";
+
+    /// <summary>
+    /// Whether a Sigstore provenance bundle must accompany a release before it is offered.
+    /// <para>
+    /// This is <c>false</c> deliberately, and it is the one control that is not yet enforced.
+    /// Stagecoach has no signing pipeline, so no release carries a bundle; requiring one would mean
+    /// the updater silently reported "no trusted release" forever. Integrity is still fully
+    /// enforced — the publishing identity is checked, the download is streamed through a hash and
+    /// compared in fixed time against both the sidecar and the digest GitHub authenticated, and the
+    /// installer is hashed again immediately before it is launched.
+    /// </para>
+    /// <para>
+    /// Set this back to <c>true</c> the moment the release pipeline emits
+    /// <c>&lt;package&gt;.sigstore.json</c>. See ADR-006.
+    /// </para>
+    /// </summary>
+    private const bool RequireProvenanceBundle = false;
+
     private const string UserAgent = "Stagecoach-UpdateClient/1.0";
 
     private static readonly Uri ReleasesApiUri =
@@ -273,7 +297,8 @@ public sealed class GitHubReleaseUpdateService(
                 else if (string.Equals(name, sigstoreName, StringComparison.Ordinal)) hasSigstoreBundle = true;
             }
 
-            if (package is null || checksum is null || !hasSigstoreBundle) return null;
+            if (package is null || checksum is null) return null;
+            if (RequireProvenanceBundle && !hasSigstoreBundle) return null;
 
             var packageUri = ReadTrustedDownloadUri(package.Value);
             var checksumUri = ReadTrustedDownloadUri(checksum.Value);

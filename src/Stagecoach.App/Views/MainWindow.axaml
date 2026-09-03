@@ -207,11 +207,71 @@
                 </ScrollViewer>
               </Border>
 
-              <Border Classes="info" IsVisible="{Binding !HasIdentities}">
-                <StackPanel Spacing="6">
-                  <TextBlock Text="No Entra account is connected yet" FontWeight="SemiBold" />
-                  <TextBlock TextWrapping="Wrap"
-                             Text="Open Connect identities in the left navigation, sign in with your Windows account, include the subscriptions you want, and scan." />
+              <!-- First run. Landing on an empty list with no next step is what an operator hit
+                   before; this states the three steps and does the first one in place. -->
+              <Border Classes="panel" IsVisible="{Binding IsFirstRun}">
+                <StackPanel Spacing="14">
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="screen-eyebrow" Text="FIRST-RUN SETUP" />
+                    <TextBlock Text="Start by connecting a Microsoft Entra account"
+                               FontSize="{StaticResource StageFontSize20}" FontWeight="SemiBold" />
+                    <TextBlock Classes="screen-description" MaxWidth="720" HorizontalAlignment="Left"
+                               Text="Stagecoach signs you in with Microsoft and then lists the machines that account can reach. It never asks for or stores your Microsoft password." />
+                  </StackPanel>
+
+                  <Grid ColumnDefinitions="*,*,*" ColumnSpacing="0">
+                    <Border BorderBrush="{DynamicResource StagecoachAccentBrush}" BorderThickness="0,3,0,0" Padding="12">
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <Border Width="26" Height="26" Background="{DynamicResource StagecoachAccentBrush}">
+                          <TextBlock Text="{Binding SetupAccountMarker}" Foreground="White"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel>
+                          <TextBlock Text="Connect an account" FontWeight="Bold" />
+                          <TextBlock Text="{Binding SetupAccountStatus}" FontSize="{StaticResource StageFontSize11}"
+                                     Foreground="{DynamicResource StageColorMuted}" />
+                        </StackPanel>
+                      </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" BorderBrush="{DynamicResource StageColorLine}" BorderThickness="0,3,0,0" Padding="12">
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <Border Width="26" Height="26" Background="{DynamicResource StageColorSurfaceAlt}">
+                          <TextBlock Text="{Binding SetupScopeMarker}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel>
+                          <TextBlock Text="Include subscriptions" FontWeight="Bold"
+                                     Foreground="{DynamicResource StageColorMuted}" />
+                          <TextBlock Text="{Binding SetupScopeStatus}" FontSize="{StaticResource StageFontSize11}"
+                                     Foreground="{DynamicResource StageColorMuted}" />
+                        </StackPanel>
+                      </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" BorderBrush="{DynamicResource StageColorLine}" BorderThickness="0,3,0,0" Padding="12">
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <Border Width="26" Height="26" Background="{DynamicResource StageColorSurfaceAlt}">
+                          <TextBlock Text="{Binding SetupScanMarker}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel>
+                          <TextBlock Text="Scan for machines" FontWeight="Bold"
+                                     Foreground="{DynamicResource StageColorMuted}" />
+                          <TextBlock Text="{Binding SetupScanStatus}" FontSize="{StaticResource StageFontSize11}"
+                                     Foreground="{DynamicResource StageColorMuted}" />
+                        </StackPanel>
+                      </StackPanel>
+                    </Border>
+                  </Grid>
+
+                  <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Button Classes="primary" Content="Sign in with Microsoft"
+                            Command="{Binding AddWindowsAccountCommand}" IsEnabled="{Binding !IsBusy}"
+                            AutomationProperties.Name="Sign in with a Microsoft Entra account" />
+                    <Button Content="Sign in with a device code"
+                            Command="{Binding AddDeviceCodeAccountCommand}" IsEnabled="{Binding !IsBusy}" />
+                    <Button Content="Open Connect identities" Command="{Binding GoToConnectIdentitiesCommand}" />
+                  </StackPanel>
+                  <TextBlock Classes="screen-description" MaxWidth="760" HorizontalAlignment="Left"
+                             FontSize="{StaticResource StageFontSize12}"
+                             Text="Your Windows sign-in does not have to be a Microsoft Entra account. Microsoft's own sign-in window lets you type any work or school account you have access to. Use device code when no sign-in window can be shown — for example over a remote session." />
                 </StackPanel>
               </Border>
 
@@ -319,8 +379,8 @@
         <ScrollViewer>
           <StackPanel Margin="30,24,30,20" Spacing="14">
             <StackPanel Spacing="6">
-              <TextBlock Classes="screen-eyebrow" Text="MICROSOFT ENTRA" />
-              <TextBlock Classes="screen-title" Text="Connect identities" />
+              <TextBlock Classes="screen-eyebrow" Text="FIRST-RUN SETUP" />
+              <TextBlock Classes="screen-title" Text="Connect the accounts you use" />
               <TextBlock Classes="screen-description"
                          Text="Each Entra account gets its own isolated, Windows-encrypted Azure CLI session. Your default Azure CLI profile is never touched." />
             </StackPanel>
@@ -330,11 +390,18 @@
                 <Border Classes="panel">
                   <StackPanel Spacing="10">
                     <TextBlock Classes="section-title" Text="Add an account" />
-                    <TextBox Text="{Binding NewIdentityName}" PlaceholderText="Friendly name (optional)" />
-                    <Button Classes="primary" Content="Use my Windows account"
-                            Command="{Binding AddWindowsAccountCommand}" HorizontalAlignment="Stretch" />
-                    <Button Content="Use a device code instead"
-                            Command="{Binding AddDeviceCodeAccountCommand}" HorizontalAlignment="Stretch" />
+                    <TextBlock Text="Stagecoach uses Microsoft's own sign-in. It never asks for or stores your Microsoft password."
+                               FontSize="{StaticResource StageFontSize12}" Opacity="0.8" TextWrapping="Wrap" />
+                    <TextBox Text="{Binding NewIdentityName}" PlaceholderText="Friendly label — customer, employer, lab (optional)" />
+                    <Button Classes="primary" Content="Sign in with Microsoft"
+                            Command="{Binding AddWindowsAccountCommand}" IsEnabled="{Binding !IsBusy}"
+                            HorizontalAlignment="Stretch"
+                            AutomationProperties.Name="Sign in with a Microsoft Entra account" />
+                    <Button Content="Sign in with a device code"
+                            Command="{Binding AddDeviceCodeAccountCommand}" IsEnabled="{Binding !IsBusy}"
+                            HorizontalAlignment="Stretch" />
+                    <TextBlock TextWrapping="Wrap" FontSize="{StaticResource StageFontSize11}" Opacity="0.75"
+                               Text="Your Windows sign-in does not have to be an Entra account — Microsoft's sign-in window lets you enter any work or school account. Choose device code when no sign-in window can be shown, such as over a remote session; the code appears in the status bar." />
                     <TextBlock Text="Conditional Access and MFA prompts still belong to Microsoft. Stagecoach never suppresses them."
                                FontSize="{StaticResource StageFontSize11}" Opacity="0.75" TextWrapping="Wrap" />
                   </StackPanel>

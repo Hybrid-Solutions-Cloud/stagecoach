@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix
+  xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
     Name="Stagecoach"
     Manufacturer="Hybrid Solutions Cloud"
@@ -9,7 +11,9 @@
     Scope="perMachine"
     Compressed="yes">
     <SummaryInformation Description="Stagecoach Windows desktop connection hub" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of Stagecoach is already installed." />
+    <MajorUpgrade
+      Schedule="afterInstallInitialize"
+      DowngradeErrorMessage="A newer version of Stagecoach is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
     <Property Id="ARPURLINFOABOUT" Value="https://labs.hybridsolutions.cloud/stagecoach/" />
     <Property Id="ARPCONTACT" Value="Hybrid Solutions Cloud" />
@@ -18,6 +22,17 @@
          to a generic application icon in both places. -->
     <Icon Id="Stagecoach.ico" SourceFile="..\src\Stagecoach.App\Assets\stagecoach.ico" />
     <Property Id="ARPPRODUCTICON" Value="Stagecoach.ico" />
+
+    <!-- Installer chrome. The package previously had no UI at all, so double-clicking it ran a
+         silent install: an elevation prompt, a progress flicker, and no confirmation of what had
+         happened or where it went. -->
+    <WixVariable Id="WixUILicenseRtf" Value="$(sys.SOURCEFILEDIR)Assets\License.rtf" />
+    <WixVariable Id="WixUIBannerBmp" Value="$(sys.SOURCEFILEDIR)Assets\StagecoachBanner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(sys.SOURCEFILEDIR)Assets\StagecoachDialog.bmp" />
+    <Property
+      Id="WIXUI_EXITDIALOGOPTIONALTEXT"
+      Value="Stagecoach needs the Azure CLI, the Windows OpenSSH client, and Remote Desktop Connection. Open it and connect a Microsoft Entra account to get started." />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Stagecoach" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Stagecoach" />
@@ -30,7 +45,7 @@
       <File Id="MainExecutableFile" Source="$(PublishDirectory)\Stagecoach.App.exe" KeyPath="yes">
         <Shortcut Id="StagecoachStartMenuShortcut" Directory="ApplicationProgramsFolder" Name="Stagecoach"
                   Description="Connect to Azure, Arc, and Azure Local machines" WorkingDirectory="INSTALLFOLDER"
-                  Icon="Stagecoach.ico" Advertise="yes" />
+                  Icon="Stagecoach.ico" IconIndex="0" Advertise="yes" />
       </File>
       <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
     </Component>
@@ -46,16 +61,38 @@
         Type="string"
         KeyPath="yes" />
     </Component>
+
     <ComponentGroup Id="ProductFiles" Directory="INSTALLFOLDER">
       <Files Include="$(PublishDirectory)\**">
         <Exclude Files="$(PublishDirectory)\Stagecoach.App.exe" />
         <Exclude Files="$(PublishDirectory)\**\*.pdb" />
       </Files>
     </ComponentGroup>
+
     <Feature Id="MainFeature" Title="Stagecoach" Level="1">
       <ComponentRef Id="MainExecutable" />
       <ComponentRef Id="AddRemoveProgramsIcon" />
       <ComponentGroupRef Id="ProductFiles" />
     </Feature>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <UIRef Id="WixUI_ErrorProgressText" />
+
+    <CustomAction
+      Id="LaunchStagecoach"
+      FileRef="MainExecutableFile"
+      ExeCommand=""
+      Execute="immediate"
+      Impersonate="yes"
+      Return="asyncNoWait" />
+
+    <UI>
+      <Publish
+        Dialog="ExitDialog"
+        Control="Finish"
+        Event="DoAction"
+        Value="LaunchStagecoach"
+        Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
+    </UI>
   </Package>
 </Wix>

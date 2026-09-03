@@ -113,6 +113,52 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private ReleaseUpdateInfo? _availableUpdate;
     [ObservableProperty] private bool _isUpdateReadyToInstall;
 
+    /// <summary>
+    /// True until at least one Microsoft Entra account is connected. Drives the first-run guidance,
+    /// because an operator opening Stagecoach for the first time otherwise lands on an empty list
+    /// with nothing telling them what to do.
+    /// </summary>
+    public bool IsFirstRun => Identities.Count == 0;
+
+    public string SetupAccountMarker => Identities.Count == 0 ? "1" : "✓";
+    public string SetupAccountStatus => Identities.Count switch
+    {
+        0 => "Not started",
+        1 => "1 account connected",
+        var count => $"{count} accounts connected",
+    };
+
+    public string SetupScopeMarker => IncludedSubscriptionCount > 0 ? "✓" : "2";
+    public string SetupScopeStatus => Identities.Count == 0
+        ? "Connect an account first"
+        : IncludedSubscriptionCount > 0
+            ? $"{IncludedSubscriptionCount} subscription(s) included"
+            : "Nothing included yet";
+
+    public string SetupScanMarker => _allMachines.Count > 0 ? "✓" : "3";
+    public string SetupScanStatus => _allMachines.Count > 0
+        ? $"{_allMachines.Count} machines found"
+        : IncludedSubscriptionCount > 0 ? "Ready to scan" : "Include scope first";
+
+    private int IncludedSubscriptionCount => Subscriptions.Count(row => row.IsEnabled);
+
+    private void RefreshSetupState()
+    {
+        OnPropertyChanged(nameof(IsFirstRun));
+        OnPropertyChanged(nameof(SetupAccountMarker));
+        OnPropertyChanged(nameof(SetupAccountStatus));
+        OnPropertyChanged(nameof(SetupScopeMarker));
+        OnPropertyChanged(nameof(SetupScopeStatus));
+        OnPropertyChanged(nameof(SetupScanMarker));
+        OnPropertyChanged(nameof(SetupScanStatus));
+    }
+
+    [RelayCommand]
+    private void GoToConnectIdentities() => SelectedTabIndex = 1;
+
+    [RelayCommand]
+    private void GoToMachines() => SelectedTabIndex = 0;
+
     public bool HasIdentities => Identities.Count > 0;
     public bool HasMachines => Machines.Count > 0;
     public bool HasLocalAccounts => LocalAccounts.Count > 0;
@@ -609,10 +655,16 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task CheckForUpdateAsync()
     {
-        await RunBusyAsync("Checking for a new Stagecoach release", async () =>
+        // A failed check used to leave "Updates have not been checked" on screen, so the button
+        // looked like it did nothing at all. The panel now always reports the outcome.
+        IsUpdateReadyToInstall = false;
+        _verifiedUpdate = null;
+        AvailableUpdate = null;
+        UpdateStatus = "Checking…";
+        try
         {
-            IsUpdateReadyToInstall = false;
-            _verifiedUpdate = null;
+            IsBusy = true;
+            StatusMessage = "Checking for a new Stagecoach release";
             var release = await _updates.CheckAsync();
             AvailableUpdate = release;
             UpdateStatus = release.Availability switch
@@ -622,11 +674,23 @@ public partial class MainViewModel : ObservableObject
                 ReleaseUpdateAvailability.Current =>
                     $"Stagecoach {release.CurrentVersion} is the current release.",
                 ReleaseUpdateAvailability.DevelopmentBuild =>
-                    "This is a development build, so it will not update itself.",
+                    $"This is a development build ({release.CurrentVersion}), so it will not update itself. " +
+                    $"The current published release is {release.LatestVersion}.",
                 _ => "Update state is unknown.",
             };
             StatusMessage = UpdateStatus;
-        });
+        }
+        catch (Exception exception)
+        {
+            CrashLog.Record("Update check", exception);
+            UpdateStatus = $"Update check failed. {SafeMessage(exception)}";
+            StatusMessage = UpdateStatus;
+            RaiseError("Could not check for updates", UpdateStatus);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     [RelayCommand]
@@ -729,6 +793,7 @@ public partial class MainViewModel : ObservableObject
 
         OnPropertyChanged(nameof(HasIdentities));
         OnPropertyChanged(nameof(ActiveIdentityContext));
+        RefreshSetupState();
     }
 
     private async Task LoadScopeAsync(Guid identityId)
@@ -737,6 +802,7 @@ public partial class MainViewModel : ObservableObject
         foreach (var item in await _store.GetTenantsAsync(identityId)) Tenants.Add(new TenantRow(item));
         Subscriptions.Clear();
         foreach (var item in await _store.GetSubscriptionsAsync(identityId)) Subscriptions.Add(new SubscriptionRow(item));
+        RefreshSetupState();
     }
 
     private async Task ReloadMachinesAsync()
@@ -748,6 +814,7 @@ public partial class MainViewModel : ObservableObject
         RebuildFilterOptions();
         ApplyMachineFilter();
         OnPropertyChanged(nameof(HasMachines));
+        RefreshSetupState();
     }
 
     private void ResetFilterOptions()

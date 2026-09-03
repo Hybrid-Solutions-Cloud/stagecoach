@@ -5,4 +5,10 @@
     <OutputName>Stagecoach-$(ReleaseVersion)-win-x64</OutputName>
     <DefineConstants>ReleaseVersion=$(ReleaseVersion);MsiVersion=$(MsiVersion);PublishDirectory=$(PublishDirectory)</DefineConstants>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Supplies WixUI_InstallDir: welcome, licence, install location, progress, and finish.
+         Without it the package installs silently after the elevation prompt, which looks broken. -->
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+  </ItemGroup>
 </Project>
