@@ -23,6 +23,36 @@
     <SolidColorBrush x:Key="StageColorNavigation">#EEE8DD</SolidColorBrush>
     <SolidColorBrush x:Key="StageColorContext">#E7DFD2</SolidColorBrush>
     <SolidColorBrush x:Key="StageColorHeader">#2C3737</SolidColorBrush>
+    <!-- Fluent resolves its own brushes for hover, pressed, and disabled states by resource key,
+         not from the control's Background. Setting colours on the control therefore only styles the
+         resting state and leaves the theme in charge of the rest — which turned selected navigation
+         items into white text on a light hover background, and made them look like they vanished.
+         Overriding the keys covers every state of every instance. Key names are taken from
+         Avalonia.Themes.Fluent 12.1.0. -->
+    <SolidColorBrush x:Key="TabItemHeaderBackgroundUnselected">#EEE8DD</SolidColorBrush>
+    <SolidColorBrush x:Key="TabItemHeaderBackgroundUnselectedPointerOver">#E2D9C9</SolidColorBrush>
+    <SolidColorBrush x:Key="TabItemHeaderBackgroundUnselectedPressed">#D9CEBB</SolidColorBrush>
+    <SolidColorBrush x:Key="TabItemHeaderBackgroundSelected">#9A412B</SolidColorBrush>
+    <SolidColorBrush x:Key="TabItemHeaderBackgroundSelectedPointerOver">#7B3020</SolidColorBrush>
+    <SolidColorBrush x:Key="TabItemHeaderBackgroundSelectedPressed">#6A2819</SolidColorBrush>
+    <SolidColorBrush x:Key="TabItemHeaderBackgroundDisabled">#EEE9DF</SolidColorBrush>
+    <SolidColorBrush x:Key="TabItemHeaderForegroundUnselected">#3C3830</SolidColorBrush>
+    <SolidColorBrush x:Key="TabItemHeaderForegroundSelected">#FFFFFF</SolidColorBrush>
+    <SolidColorBrush x:Key="TabItemHeaderForegroundDisabled">#8C867B</SolidColorBrush>
+
+    <SolidColorBrush x:Key="ButtonBackground">#FFFDF8</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonBackgroundPointerOver">#F2DFD8</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonBackgroundPressed">#EEE9DF</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonBackgroundDisabled">#EEE9DF</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonForeground">#25231F</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonForegroundPointerOver">#25231F</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonForegroundPressed">#25231F</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonForegroundDisabled">#5F5A52</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonBorderBrush">#A99E8D</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonBorderBrushPointerOver">#A99E8D</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonBorderBrushPressed">#A99E8D</SolidColorBrush>
+    <SolidColorBrush x:Key="ButtonBorderBrushDisabled">#A99E8D</SolidColorBrush>
+
     <Thickness x:Key="StageCardPadding">16</Thickness>
     <x:Double x:Key="StageFontSize11">11</x:Double>
     <x:Double x:Key="StageFontSize12">12</x:Double>
@@ -82,7 +112,7 @@
          buttons look absent while a background operation held them disabled. -->
     <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource StageColorSurfaceAlt}" />
-      <Setter Property="Foreground" Value="#6F6A61" />
+      <Setter Property="Foreground" Value="#5F5A52" />
       <Setter Property="BorderBrush" Value="{DynamicResource StageColorLineStrong}" />
     </Style>
     <Style Selector="Button:disabled">
@@ -186,22 +216,20 @@
       <Setter Property="Padding" Value="0" />
       <Setter Property="BorderThickness" Value="0" />
     </Style>
+    <!-- Layout only. Every colour comes from the TabItemHeader* resources above, so the hover,
+         pressed, and selected states stay under our control instead of the theme's. -->
     <Style Selector="TabControl.product-shell TabItem">
       <Setter Property="MinWidth" Value="210" />
       <Setter Property="MaxWidth" Value="210" />
       <Setter Property="MinHeight" Value="44" />
       <Setter Property="Padding" Value="18,11" />
+      <Setter Property="Margin" Value="0" />
       <Setter Property="HorizontalContentAlignment" Value="Left" />
-      <Setter Property="Foreground" Value="{DynamicResource StageColorMuted}" />
-      <Setter Property="Background" Value="{DynamicResource StageColorNavigation}" />
-      <Setter Property="BorderThickness" Value="5,0,0,0" />
-      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="CornerRadius" Value="0" />
       <Setter Property="FontSize" Value="{DynamicResource StageFontSize16}" />
     </Style>
     <Style Selector="TabControl.product-shell TabItem:selected">
-      <Setter Property="Background" Value="{DynamicResource StagecoachAccentBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource StageColorAccentStrong}" />
-      <Setter Property="Foreground" Value="White" />
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
 
