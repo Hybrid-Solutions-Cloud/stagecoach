@@ -112,6 +112,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _updateStatus = "Updates have not been checked.";
     [ObservableProperty] private ReleaseUpdateInfo? _availableUpdate;
     [ObservableProperty] private bool _isUpdateReadyToInstall;
+    [ObservableProperty] private string _supportBundleStatus = "No support bundle has been created yet.";
+    [ObservableProperty] private string _latestSupportBundlePath = string.Empty;
+
+    private WorkstationReadiness? _lastReadiness;
 
     /// <summary>
     /// True until at least one Microsoft Entra account is connected. Drives the first-run guidance,
@@ -188,10 +192,12 @@ public partial class MainViewModel : ObservableObject
             BackgroundSyncMinutes = Math.Clamp(settings.BackgroundSyncMinutes, 5, 1440);
             StartMinimized = settings.StartMinimized;
 
-            var readiness = await _readiness.InspectAsync();
-            WorkstationStatus = readiness.CanDiscover
-                ? readiness.Actions.Count == 0 ? "Workstation ready" : string.Join("  •  ", readiness.Actions)
-                : "Azure CLI is required before Stagecoach can discover machines.";
+            // Readiness runs several Azure CLI commands and takes tens of seconds. It used to run
+            // inside the busy gate, so every control — including the sign-in buttons — stayed
+            // disabled until it finished and the application looked broken on launch. It now runs
+            // in the background and fills in its status when it arrives.
+            WorkstationStatus = "Checking workstation prerequisites…";
+            _ = InspectWorkstationInBackgroundAsync();
 
             await ReloadIdentitiesAsync();
             await ReloadLocalAccountsAsync();
@@ -205,6 +211,23 @@ public partial class MainViewModel : ObservableObject
                 ? "Add an Entra account under Connect identities to discover machines."
                 : $"{Machines.Count} machines cached";
         });
+    }
+
+    private async Task InspectWorkstationInBackgroundAsync()
+    {
+        try
+        {
+            var readiness = await _readiness.InspectAsync();
+            _lastReadiness = readiness;
+            WorkstationStatus = readiness.CanDiscover
+                ? readiness.Actions.Count == 0 ? "Workstation ready" : string.Join("  •  ", readiness.Actions)
+                : "Azure CLI is required before Stagecoach can discover machines.";
+        }
+        catch (Exception exception)
+        {
+            CrashLog.Record("Workstation readiness", exception);
+            WorkstationStatus = SafeMessage(exception);
+        }
     }
 
     // ---------------------------------------------------------------- Entra identities
@@ -640,6 +663,46 @@ public partial class MainViewModel : ObservableObject
         StatusMessage = "No Azure changes were made.";
     }
 
+    /// <summary>
+    /// Collects the error log, an environment summary, and a local-state inventory into one zip an
+    /// operator can attach to a support request. Nothing from the database, the isolated Azure CLI
+    /// profiles, or Windows Credential Manager is included.
+    /// </summary>
+    [RelayCommand]
+    private async Task CreateSupportBundleAsync()
+    {
+        await RunBusyAsync("Collecting support information", async () =>
+        {
+            var path = await SupportBundle.CreateAsync(CurrentVersion, _lastReadiness, StatusMessage);
+            LatestSupportBundlePath = path;
+            SupportBundleStatus = $"Saved {Path.GetFileName(path)}. Attach this file to your support request.";
+            StatusMessage = SupportBundleStatus;
+        });
+    }
+
+    [RelayCommand]
+    private void OpenSupportFolder()
+    {
+        try
+        {
+            Directory.CreateDirectory(SupportBundle.Directory);
+            using var process = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = SupportBundle.Directory,
+                    UseShellExecute = true,
+                },
+            };
+            process.Start();
+        }
+        catch (Exception exception)
+        {
+            CrashLog.Record("Open support folder", exception);
+            StatusMessage = SafeMessage(exception);
+        }
+    }
+
     [RelayCommand]
     private async Task PrepareWorkstationAsync()
     {
@@ -647,6 +710,7 @@ public partial class MainViewModel : ObservableObject
         {
             await _readiness.PrepareCliExtensionsAsync();
             var result = await _readiness.InspectAsync();
+            _lastReadiness = result;
             WorkstationStatus = result.Actions.Count == 0 ? "Workstation ready" : string.Join("  •  ", result.Actions);
             StatusMessage = "Local Azure CLI prerequisites are ready.";
         });

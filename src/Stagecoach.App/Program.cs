@@ -1,5 +1,4 @@
 using Avalonia;
-using System.Runtime.InteropServices;
 
 namespace Stagecoach.App;
 
@@ -8,7 +7,11 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        if (OperatingSystem.IsWindows()) SetCurrentProcessExplicitAppUserModelID("HybridSolutionsCloud.Stagecoach");
+        // No explicit AppUserModelID. Declaring one makes the taskbar resolve the button's icon and
+        // pinning identity through a Start menu shortcut carrying the same ID; with no such
+        // shortcut — and never for the portable ZIP — the taskbar falls back to the generic
+        // application icon even though the executable carries its own. Without it the taskbar uses
+        // the window and executable icons, which are correct.
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
@@ -17,7 +20,4 @@ internal static class Program
             .UsePlatformDetect()
             .WithInterFont()
             .LogToTrace();
-
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
 }

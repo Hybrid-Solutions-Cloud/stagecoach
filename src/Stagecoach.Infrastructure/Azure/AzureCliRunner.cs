@@ -13,7 +13,7 @@ public sealed class AzureCliRunner : IAzureCliRunner
     /// enough for Conditional Access, MFA, and a device-code round trip; short enough that a prompt
     /// which never appeared cannot wedge the application indefinitely.
     /// </summary>
-    internal static readonly TimeSpan InteractiveTimeout = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan InteractiveTimeout = TimeSpan.FromMinutes(5);
 
     public Task<CommandResult> RunAsync(
         string azureConfigDirectory,
@@ -154,7 +154,7 @@ public sealed class AzureCliRunner : IAzureCliRunner
     /// machine where the CLI is installed and working. The extensionless <c>az</c> shell script
     /// that ships alongside it is not runnable by CreateProcess either, so it is skipped.
     /// </summary>
-    internal static string ResolveAzureCliPath()
+    public static string ResolveAzureCliPath()
     {
         if (_resolvedCliPath is { } cached && File.Exists(cached)) return cached;
 

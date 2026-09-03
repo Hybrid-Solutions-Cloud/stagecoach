@@ -100,113 +100,6 @@
                 </StackPanel>
               </Grid>
 
-              <Border Classes="panel">
-                <StackPanel Spacing="10">
-                  <TextBox Classes="estate-search" Text="{Binding SearchText}"
-                           PlaceholderText="Search machines, resource groups, domains, tenants, or subscriptions"
-                           AutomationProperties.Name="Search machines" />
-                  <WrapPanel Orientation="Horizontal">
-                    <CheckBox Content="Favorites" IsChecked="{Binding FavoritesOnly}" Margin="0,0,14,6" />
-                    <CheckBox Content="Ready only" IsChecked="{Binding ReadyOnly}" Margin="0,0,14,6" />
-                    <CheckBox Content="Pinned account" IsChecked="{Binding PinnedOnly}" Margin="0,0,14,6" />
-                  </WrapPanel>
-                  <Grid ColumnDefinitions="*,*,*,*,Auto" ColumnSpacing="10" RowSpacing="8">
-                    <StackPanel Spacing="4">
-                      <TextBlock Classes="field-label" Text="Tenant" />
-                      <ComboBox Classes="estate-filter" ItemsSource="{Binding TenantFilters}"
-                                SelectedItem="{Binding SelectedTenantFilter}"
-                                AutomationProperties.Name="Tenant filter" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Spacing="4">
-                      <TextBlock Classes="field-label" Text="Subscription" />
-                      <ComboBox Classes="estate-filter" ItemsSource="{Binding SubscriptionFilters}"
-                                SelectedItem="{Binding SelectedSubscriptionFilter}"
-                                AutomationProperties.Name="Subscription filter" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="2" Spacing="4">
-                      <TextBlock Classes="field-label" Text="Source" />
-                      <ComboBox Classes="estate-filter" ItemsSource="{Binding SourceFilters}"
-                                SelectedItem="{Binding SelectedSourceFilter}"
-                                AutomationProperties.Name="Source filter" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="3" Spacing="4">
-                      <TextBlock Classes="field-label" Text="OS" />
-                      <ComboBox Classes="estate-filter" ItemsSource="{Binding OperatingSystemFilters}"
-                                SelectedItem="{Binding SelectedOperatingSystemFilter}"
-                                AutomationProperties.Name="Operating system filter" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="4" Spacing="4">
-                      <TextBlock Classes="field-label" Text="State" />
-                      <StackPanel Orientation="Horizontal" Spacing="8">
-                        <ComboBox Classes="estate-filter" MinWidth="130" ItemsSource="{Binding StateFilters}"
-                                  SelectedItem="{Binding SelectedStateFilter}"
-                                  AutomationProperties.Name="Power state filter" />
-                        <Button Content="Reset" MinHeight="40" Command="{Binding ResetFiltersCommand}" />
-                      </StackPanel>
-                    </StackPanel>
-                  </Grid>
-                </StackPanel>
-              </Border>
-
-              <Border Classes="panel" Padding="0">
-                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                  <Grid RowDefinitions="Auto,*" MinWidth="1020">
-                    <!-- Header and rows share one column definition so they always line up. -->
-                    <Grid Grid.Row="0" ColumnDefinitions="36,2*,80,90,150,150,120,130,90,190"
-                          Margin="8,8,8,6" Background="{DynamicResource StageColorSurfaceAlt}">
-                      <TextBlock Classes="column-header" Text="" />
-                      <TextBlock Grid.Column="1" Classes="column-header" Text="MACHINE" Margin="6,8" />
-                      <TextBlock Grid.Column="2" Classes="column-header" Text="SOURCE" Margin="6,8" />
-                      <TextBlock Grid.Column="3" Classes="column-header" Text="OS" Margin="6,8" />
-                      <TextBlock Grid.Column="4" Classes="column-header" Text="TENANT" Margin="6,8" />
-                      <TextBlock Grid.Column="5" Classes="column-header" Text="SUBSCRIPTION" Margin="6,8" />
-                      <TextBlock Grid.Column="6" Classes="column-header" Text="STATE" Margin="6,8" />
-                      <TextBlock Grid.Column="7" Classes="column-header" Text="ROUTE" Margin="6,8" />
-                      <TextBlock Grid.Column="8" Classes="column-header" Text="ACCOUNT" Margin="6,8" />
-                      <TextBlock Grid.Column="9" Classes="column-header" Text="" Margin="6,8" />
-                    </Grid>
-                    <ListBox Grid.Row="1" Classes="estate-list" MinHeight="220" MaxHeight="560"
-                             ItemsSource="{Binding Machines}" SelectedItem="{Binding SelectedMachine}"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             AutomationProperties.Name="Discovered machines">
-                      <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:MachineRow">
-                          <Grid ColumnDefinitions="36,2*,80,90,150,150,120,130,90,190" Margin="6,6">
-                            <Button Content="{Binding Favorite}" Padding="4,2" BorderThickness="0"
-                                    Background="Transparent" Foreground="#E3A008"
-                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ToggleFavoriteCommand}"
-                                    CommandParameter="{Binding}"
-                                    AutomationProperties.Name="Toggle favorite" />
-                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold"
-                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="6,0" />
-                            <TextBlock Grid.Column="2" Text="{Binding Source}" VerticalAlignment="Center" Margin="6,0" />
-                            <TextBlock Grid.Column="3" Text="{Binding OperatingSystem}" VerticalAlignment="Center" Margin="6,0" />
-                            <TextBlock Grid.Column="4" Text="{Binding Tenant}" TextTrimming="CharacterEllipsis"
-                                       VerticalAlignment="Center" Margin="6,0" />
-                            <TextBlock Grid.Column="5" Text="{Binding Subscription}" TextTrimming="CharacterEllipsis"
-                                       VerticalAlignment="Center" Margin="6,0" />
-                            <TextBlock Grid.Column="6" Text="{Binding State}" VerticalAlignment="Center" Margin="6,0" />
-                            <TextBlock Grid.Column="7" Text="{Binding Route}" VerticalAlignment="Center" Margin="6,0" />
-                            <TextBlock Grid.Column="8" Text="{Binding Account}" VerticalAlignment="Center" Margin="6,0"
-                                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                            <StackPanel Grid.Column="9" Orientation="Horizontal" Spacing="6" Margin="6,0">
-                              <Button Classes="primary" Content="Connect" MinHeight="30" Padding="14,5"
-                                      Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ConnectCommand}"
-                                      CommandParameter="{Binding}"
-                                      AutomationProperties.Name="Connect to this machine" />
-                              <Button Content="Edit" MinHeight="30" Padding="12,5"
-                                      Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).EditMachineCommand}"
-                                      CommandParameter="{Binding}"
-                                      AutomationProperties.Name="Edit this machine" />
-                            </StackPanel>
-                          </Grid>
-                        </DataTemplate>
-                      </ListBox.ItemTemplate>
-                    </ListBox>
-                  </Grid>
-                </ScrollViewer>
-              </Border>
-
               <!-- First run. Landing on an empty list with no next step is what an operator hit
                    before; this states the three steps and does the first one in place. -->
               <Border Classes="panel" IsVisible="{Binding IsFirstRun}">
@@ -274,6 +167,113 @@
                              Text="Your Windows sign-in does not have to be a Microsoft Entra account. Microsoft's own sign-in window lets you type any work or school account you have access to. Use device code when no sign-in window can be shown — for example over a remote session." />
                 </StackPanel>
               </Border>
+              <Border Classes="panel" IsVisible="{Binding HasIdentities}">
+                <StackPanel Spacing="10">
+                  <TextBox Classes="estate-search" Text="{Binding SearchText}"
+                           PlaceholderText="Search machines, resource groups, domains, tenants, or subscriptions"
+                           AutomationProperties.Name="Search machines" />
+                  <WrapPanel Orientation="Horizontal">
+                    <CheckBox Content="Favorites" IsChecked="{Binding FavoritesOnly}" Margin="0,0,14,6" />
+                    <CheckBox Content="Ready only" IsChecked="{Binding ReadyOnly}" Margin="0,0,14,6" />
+                    <CheckBox Content="Pinned account" IsChecked="{Binding PinnedOnly}" Margin="0,0,14,6" />
+                  </WrapPanel>
+                  <Grid ColumnDefinitions="*,*,*,*,Auto" ColumnSpacing="10" RowSpacing="8">
+                    <StackPanel Spacing="4">
+                      <TextBlock Classes="field-label" Text="Tenant" />
+                      <ComboBox Classes="estate-filter" ItemsSource="{Binding TenantFilters}"
+                                SelectedItem="{Binding SelectedTenantFilter}"
+                                AutomationProperties.Name="Tenant filter" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                      <TextBlock Classes="field-label" Text="Subscription" />
+                      <ComboBox Classes="estate-filter" ItemsSource="{Binding SubscriptionFilters}"
+                                SelectedItem="{Binding SelectedSubscriptionFilter}"
+                                AutomationProperties.Name="Subscription filter" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="4">
+                      <TextBlock Classes="field-label" Text="Source" />
+                      <ComboBox Classes="estate-filter" ItemsSource="{Binding SourceFilters}"
+                                SelectedItem="{Binding SelectedSourceFilter}"
+                                AutomationProperties.Name="Source filter" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="3" Spacing="4">
+                      <TextBlock Classes="field-label" Text="OS" />
+                      <ComboBox Classes="estate-filter" ItemsSource="{Binding OperatingSystemFilters}"
+                                SelectedItem="{Binding SelectedOperatingSystemFilter}"
+                                AutomationProperties.Name="Operating system filter" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="4" Spacing="4">
+                      <TextBlock Classes="field-label" Text="State" />
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ComboBox Classes="estate-filter" MinWidth="130" ItemsSource="{Binding StateFilters}"
+                                  SelectedItem="{Binding SelectedStateFilter}"
+                                  AutomationProperties.Name="Power state filter" />
+                        <Button Content="Reset" MinHeight="40" Command="{Binding ResetFiltersCommand}" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Grid>
+                </StackPanel>
+              </Border>
+
+              <Border Classes="panel" Padding="0" IsVisible="{Binding HasMachines}">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                  <Grid RowDefinitions="Auto,*" MinWidth="1020">
+                    <!-- Header and rows share one column definition so they always line up. -->
+                    <Grid Grid.Row="0" ColumnDefinitions="36,2*,80,90,150,150,120,130,90,190"
+                          Margin="8,8,8,6" Background="{DynamicResource StageColorSurfaceAlt}">
+                      <TextBlock Classes="column-header" Text="" />
+                      <TextBlock Grid.Column="1" Classes="column-header" Text="MACHINE" Margin="6,8" />
+                      <TextBlock Grid.Column="2" Classes="column-header" Text="SOURCE" Margin="6,8" />
+                      <TextBlock Grid.Column="3" Classes="column-header" Text="OS" Margin="6,8" />
+                      <TextBlock Grid.Column="4" Classes="column-header" Text="TENANT" Margin="6,8" />
+                      <TextBlock Grid.Column="5" Classes="column-header" Text="SUBSCRIPTION" Margin="6,8" />
+                      <TextBlock Grid.Column="6" Classes="column-header" Text="STATE" Margin="6,8" />
+                      <TextBlock Grid.Column="7" Classes="column-header" Text="ROUTE" Margin="6,8" />
+                      <TextBlock Grid.Column="8" Classes="column-header" Text="ACCOUNT" Margin="6,8" />
+                      <TextBlock Grid.Column="9" Classes="column-header" Text="" Margin="6,8" />
+                    </Grid>
+                    <ListBox Grid.Row="1" Classes="estate-list" MaxHeight="560"
+                             ItemsSource="{Binding Machines}" SelectedItem="{Binding SelectedMachine}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             AutomationProperties.Name="Discovered machines">
+                      <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:MachineRow">
+                          <Grid ColumnDefinitions="36,2*,80,90,150,150,120,130,90,190" Margin="6,6">
+                            <Button Content="{Binding Favorite}" Padding="4,2" BorderThickness="0"
+                                    Background="Transparent" Foreground="#E3A008"
+                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ToggleFavoriteCommand}"
+                                    CommandParameter="{Binding}"
+                                    AutomationProperties.Name="Toggle favorite" />
+                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="2" Text="{Binding Source}" VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="3" Text="{Binding OperatingSystem}" VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="4" Text="{Binding Tenant}" TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="5" Text="{Binding Subscription}" TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="6" Text="{Binding State}" VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="7" Text="{Binding Route}" VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="8" Text="{Binding Account}" VerticalAlignment="Center" Margin="6,0"
+                                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <StackPanel Grid.Column="9" Orientation="Horizontal" Spacing="6" Margin="6,0">
+                              <Button Classes="primary" Content="Connect" MinHeight="30" Padding="14,5"
+                                      Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ConnectCommand}"
+                                      CommandParameter="{Binding}"
+                                      AutomationProperties.Name="Connect to this machine" />
+                              <Button Content="Edit" MinHeight="30" Padding="12,5"
+                                      Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).EditMachineCommand}"
+                                      CommandParameter="{Binding}"
+                                      AutomationProperties.Name="Edit this machine" />
+                            </StackPanel>
+                          </Grid>
+                        </DataTemplate>
+                      </ListBox.ItemTemplate>
+                    </ListBox>
+                  </Grid>
+                </ScrollViewer>
+              </Border>
+
 
               <Border Classes="panel" IsVisible="{Binding SelectedMachine, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
                 <StackPanel Spacing="8">
@@ -664,6 +664,22 @@
                 </StackPanel>
                 <TextBlock Text="Updates are only accepted from the signed Stagecoach release repository and are SHA-256 verified before Windows Installer runs."
                            FontSize="{StaticResource StageFontSize11}" Opacity="0.7" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="panel">
+              <StackPanel Spacing="10">
+                <TextBlock Classes="section-title" Text="Support and diagnostics" />
+                <TextBlock TextWrapping="Wrap" Opacity="0.8"
+                           Text="Collects the error log, an environment summary, and a list of local file names into a single zip you can attach to a support request. It contains no passwords, no Azure tokens, and nothing from the metadata database or the Azure CLI profiles." />
+                <TextBlock Text="{Binding SupportBundleStatus}" TextWrapping="Wrap" />
+                <TextBox Text="{Binding LatestSupportBundlePath, Mode=OneWay}" IsReadOnly="True"
+                         IsVisible="{Binding LatestSupportBundlePath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                         AutomationProperties.Name="Most recent support bundle path" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Classes="primary" Content="Create support bundle" Command="{Binding CreateSupportBundleCommand}" />
+                  <Button Content="Open support folder" Command="{Binding OpenSupportFolderCommand}" />
+                </StackPanel>
               </StackPanel>
             </Border>
 

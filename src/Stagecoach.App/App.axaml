@@ -61,10 +61,13 @@
       <Setter Property="Background" Value="{DynamicResource StageColorAccentSoft}" />
       <Setter Property="Foreground" Value="{DynamicResource StageColorInk}" />
     </Style>
+    <!-- A disabled control must still read as a control. The previous washed-out treatment made
+         buttons look absent while a background operation held them disabled. -->
     <Style Selector="Button:disabled">
       <Setter Property="Background" Value="{DynamicResource StageColorSurfaceAlt}" />
-      <Setter Property="Foreground" Value="#5F5A52" />
-      <Setter Property="Opacity" Value="0.72" />
+      <Setter Property="Foreground" Value="#6F6A61" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StageColorLineStrong}" />
+      <Setter Property="Opacity" Value="1" />
     </Style>
     <Style Selector="Button.primary">
       <Setter Property="Background" Value="{DynamicResource StagecoachAccentBrush}" />
@@ -94,6 +97,19 @@
     <Style Selector="Button.header-action:pressed">
       <Setter Property="Background" Value="#1D2626" />
       <Setter Property="Foreground" Value="White" />
+    </Style>
+    <!-- On the dark header band the shared disabled treatment rendered as an empty rectangle. -->
+    <Style Selector="Button.header-action:disabled">
+      <Setter Property="Background" Value="#33404040" />
+      <Setter Property="BorderBrush" Value="#5C6665" />
+      <Setter Property="Foreground" Value="#9FA9A8" />
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Button.primary:disabled">
+      <Setter Property="Background" Value="#C9A899" />
+      <Setter Property="BorderBrush" Value="#C9A899" />
+      <Setter Property="Foreground" Value="#FFF6F1" />
+      <Setter Property="Opacity" Value="1" />
     </Style>
 
     <Style Selector="TextBox">
