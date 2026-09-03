@@ -13,6 +13,8 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
         IProgress<string>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        await PruneOrphanedProfilesAsync(cancellationToken);
+
         var pendingId = Guid.NewGuid();
         var configDirectory = StagecoachPaths.IdentityConfigDirectory(pendingId);
         Directory.CreateDirectory(configDirectory);
@@ -30,11 +32,12 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
         var accountName = await ReadAuthenticatedAccountNameAsync(configDirectory, cancellationToken);
         var identityId = StableIdentityId(accountName);
         var finalDirectory = StagecoachPaths.IdentityConfigDirectory(identityId);
-        if ((await store.GetIdentitiesAsync(cancellationToken)).Any(item => item.Id == identityId))
-        {
-            TryDeleteDirectory(Path.GetDirectoryName(configDirectory)!);
-            throw new InvalidOperationException($"{accountName} is already configured. Reauthenticate the existing identity instead.");
-        }
+        // Signing in again with an account that is already stored is a reauthentication, not an
+        // error. Refusing it was a dead end: a half-added account — saved, but never shown because
+        // a later step failed — could not be re-added and could not be reauthenticated either,
+        // because it was not visible to select.
+        var existing = (await store.GetIdentitiesAsync(cancellationToken))
+            .FirstOrDefault(item => item.Id == identityId);
         if (!string.Equals(configDirectory, finalDirectory, StringComparison.OrdinalIgnoreCase))
         {
             // The signed-in profile lives in <identities>\<pending id>\azure and has to become
@@ -61,14 +64,32 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
 
         var identity = new AzureIdentityProfile(
             identityId,
-            string.IsNullOrWhiteSpace(displayName) ? accountName : displayName.Trim(),
+            string.IsNullOrWhiteSpace(displayName)
+                ? existing?.DisplayName ?? accountName
+                : displayName.Trim(),
             accountName,
             finalDirectory,
             AuthenticationState.Ready,
             DateTimeOffset.UtcNow);
         await store.UpsertIdentityAsync(identity, cancellationToken);
-        var inventory = await RefreshInventoryAsync(identity, cancellationToken);
-        await store.UpsertIdentityInventoryAsync(inventory, cancellationToken);
+
+        // Enumerating tenants and subscriptions is a separate Azure call and can fail on its own —
+        // an account with no subscriptions, a transient error, Conditional Access. It must not
+        // discard an account that has just signed in successfully: doing so left the identity
+        // saved but invisible, and blocked every later attempt with "already configured".
+        try
+        {
+            var inventory = await RefreshInventoryAsync(identity, cancellationToken);
+            await store.UpsertIdentityInventoryAsync(inventory, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return identity with
+            {
+                LastErrorCategory = "subscription_discovery_failed",
+            };
+        }
+
         return identity;
     }
 
@@ -114,7 +135,13 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
             ["account", "list", "--all", "--refresh", "--output", "json"],
             cancellationToken);
         if (!result.Succeeded)
-            throw new InvalidOperationException("Azure subscription discovery failed. Reauthenticate this identity and retry.");
+        {
+            var detail = FirstMeaningfulLine(result.StandardError);
+            throw new InvalidOperationException(
+                "Azure subscription discovery failed." +
+                (detail is null ? string.Empty : $" Azure CLI reported: {detail}") +
+                " The account is still connected — use Refresh available scope to try again.");
+        }
 
         var existingTenants = (await store.GetTenantsAsync(identity.Id, cancellationToken))
             .ToDictionary(item => item.TenantId, StringComparer.OrdinalIgnoreCase);
@@ -246,6 +273,32 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
                 !candidate.StartsWith("  File \"", StringComparison.Ordinal));
         if (line is null) return null;
         return line.Length <= 300 ? line : string.Concat(line.AsSpan(0, 300), "…");
+    }
+
+    /// <summary>
+    /// Removes profile folders that no stored identity points at. An abandoned or failed sign-in
+    /// leaves one behind, and they otherwise accumulate silently, each holding an Azure CLI token
+    /// cache that nothing will ever use again.
+    /// </summary>
+    private async Task PruneOrphanedProfilesAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!Directory.Exists(StagecoachPaths.IdentityDirectory)) return;
+            var known = (await store.GetIdentitiesAsync(cancellationToken))
+                .Select(item => item.Id.ToString("D"))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var directory in Directory.GetDirectories(StagecoachPaths.IdentityDirectory))
+            {
+                if (known.Contains(Path.GetFileName(directory))) continue;
+                TryDeleteDirectory(directory);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Housekeeping only; never block a sign-in because a stale folder could not be removed.
+        }
     }
 
     private static void TryDeleteDirectory(string path)

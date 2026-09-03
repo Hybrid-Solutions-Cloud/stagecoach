@@ -248,11 +248,24 @@ public partial class MainViewModel : ObservableObject
                 ? "Starting device-code sign-in — the code will appear here"
                 : "Signing in with Microsoft — complete the prompt Windows shows", async () =>
         {
-            var identity = await _identityService.AddAsync(NewIdentityName, useDeviceCode, progress);
-            NewIdentityName = string.Empty;
-            await ReloadIdentitiesAsync();
-            SelectedIdentity = Identities.FirstOrDefault(item => item.Profile.Id == identity.Id);
-            StatusMessage = $"{identity.DisplayName} connected. Choose the tenants and subscriptions to scan.";
+            try
+            {
+                var identity = await _identityService.AddAsync(NewIdentityName, useDeviceCode, progress);
+                NewIdentityName = string.Empty;
+                SelectedIdentity = Identities.FirstOrDefault(item => item.Profile.Id == identity.Id);
+                StatusMessage = identity.LastErrorCategory == "subscription_discovery_failed"
+                    ? $"{identity.DisplayName} is connected, but its subscriptions could not be listed. " +
+                      "Open Connect identities and choose Refresh available scope."
+                    : $"{identity.DisplayName} connected. Choose the tenants and subscriptions to scan.";
+                SelectedTabIndex = 1;
+            }
+            finally
+            {
+                // Always reload. An account can be stored and still fail a later step, and leaving
+                // the list stale made it invisible — which then blocked every retry as a duplicate.
+                await ReloadIdentitiesAsync();
+                SelectedIdentity ??= Identities.FirstOrDefault();
+            }
         });
     }
 
