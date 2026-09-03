@@ -1,14 +1,21 @@
 using Avalonia.Controls;
+using Avalonia.Platform;
 
 namespace Stagecoach.App;
 
+/// <summary>
+/// Loads the Stagecoach wheel used for the window and notification-area icons.
+/// The executable's own Win32 icon comes from <c>Assets/stagecoach.ico</c> via
+/// <c>ApplicationIcon</c>; this loads the 256px PNG, because a window icon wants one
+/// well-defined bitmap rather than whichever frame an .ico decoder happens to pick.
+/// </summary>
 internal static class StagecoachIcon
 {
-    private const string IcoBase64 = "AAABAAEAICAAAAEAIABoBAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAgAAAAIAgCAAAA/BjtowAAAAlwSFlzAAAAAAAAAAEAhHkXcwAABBpJREFUeJytln1QVFUYxu8559677MdlW1bQ0lSkKAY1I100mEG0cLSpicaZxtFhLCVTGUcz0nLd1drAHD6kjyFQaXRiKofIQmwoGtOi+NgFRsgWwlkhZneBll3YZYH7dZqFf5xC6O7t+evMnGfO75x5n3POCzDGRFjq/bO/xdbudLlFUSTAPW1kGEuP+gP5hSXVX9d6fb45tycZMOz1bt+1v8lqU6vUKpVqTr9kwBGTpdnaGskw/9EvDfBrk7W2rl6jUc9uwxiLIg5VF0gE1P1wjWVZmqLuZeA4nuP5CAWt12lVqgieF6QBHL19CKEZpwRBZDku4eHYzC3phqQVOi0DQChb0gAcx88YSJblIhm1ad8rGWnrmts6K6tqnQN/BccnKJIMJ6b/0CTLLll0f+npYyOjgVdzLQjBaH2UShmx9dmnbt7qlgvgeSFaH1Vx5oTt5u/FZZXJScv7nYMNLe1e3+iWjam/2W/LAuBQWsS3j+x19Dk/PP+55ej+/JLzt7odGrWSJBEmMIRQFmCS5dJTVj++/NGsHGPSyoSfGluNr2W/fqLIMzxCEGCqyEAWABDEjq3PVNV8HxMdZf/D0dbRxfH8GUvuIVNRn2uIYzlOkBjTuyUIwoIYffyyxecqq2Pm6RttHVotc+GLGgCRMSfrxsfFirpPMiYnwwfwgrh08cIJlguOTw4Mefz+MZqmCAKcq/xqoSHm+fmYhUKkUsYJsCjqdVp/YAxB+HTa2sRH4iCEBIR4xLPAXgfi4g2H8wZtDXJjCqZhdz3aoSEGBA7tgBDF8AEAQo/Xx2jUoijW32j8scFK0xTGBC+KZsP8eS5Hy1vZBCejBiSCjj4nTVNKZUS0Xsdo1BDBYHA8e3vmA4kPXS4tTn2QdE/IqAFCaGDQ0327N9WwqrG1Iy52UXtH1+4dmZvWrz1kLupziWt2v/RdTb28m0wQlV9ezTce+KbuekL8snVPrExPWXPweIFn2KekEEVTFEKyAAqavv6Lrb2z642cnScLy8yH91iKzzrdQxq1kuW4qXYCy7vJgIAQmt8r/azs1IFd24ynPkpOWnGflrH33AmOTwACiHJSNC2SRIOe4ZcPmssLjpdYcvPfrwAESDGsIjCGEDyWGP8//AcKmu7td7+452juvqyzhabmts5rP7e4Bz0XL12haUoagKLIGfsgBU0FAmNvvvvBp1VXn9uUtu2FzTptJIQAY4lfZuzSJYIgzDiFEFIi1NVzJ8/eE6GgtZGMWqXkeV4aIGPD+vKKixjj6Q/936IoMnRKjH2jfq9vFEhtW55MXr05Y+PlK98yGs0sNgAACiUsNJZc5NPvmJyugSZrq1qlQmhqjVklGaCP0l26UJ5XUFJdU+v1jszZnIcTU4bR5J88tjd7Z7O1bc72/W+q1ML2Be4OwwAAAABJRU5ErkJggg==";
+    private static readonly Uri Source = new("avares://Stagecoach.App/Assets/stagecoach.png");
 
     public static WindowIcon Create()
     {
-        using var stream = new MemoryStream(Convert.FromBase64String(IcoBase64), writable: false);
+        using var stream = AssetLoader.Open(Source);
         return new WindowIcon(stream);
     }
 }

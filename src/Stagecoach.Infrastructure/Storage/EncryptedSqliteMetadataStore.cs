@@ -22,11 +22,17 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         SQLitePCL.Batteries_V2.Init();
-        Directory.CreateDirectory(Path.GetDirectoryName(_databasePath) ?? ".");
+        var directory = Path.GetDirectoryName(_databasePath) ?? ".";
+        Directory.CreateDirectory(directory);
+
+        // Fail here, naming the path, rather than letting SQLite surface "attempt to write a
+        // readonly database" from somewhere deep in a later command.
+        StagecoachPaths.AssertWritable(directory);
+
         _keyHex = LoadOrCreateKey();
         await using var connection = await OpenAsync(cancellationToken);
+        await ApplyJournalModeAsync(connection, cancellationToken);
         var sql = """
-            PRAGMA journal_mode=WAL;
             PRAGMA foreign_keys=ON;
             CREATE TABLE IF NOT EXISTS Identities (
                 Id TEXT PRIMARY KEY,
@@ -403,6 +409,30 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
 
         Add(command, "$resource", resourceId.ToUpperInvariant());
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Write-ahead logging needs to create <c>-wal</c> and <c>-shm</c> files beside the database.
+    /// That fails on redirected AppData (OneDrive, folder redirection to a network share) and under
+    /// Controlled Folder Access, and SQLite reports it as "attempt to write a readonly database".
+    /// Rolled-back journalling is slower but works everywhere, so fall back rather than refuse to start.
+    /// </summary>
+    private static async Task ApplyJournalModeAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ExecuteAsync(connection, "PRAGMA journal_mode=WAL;", cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA journal_mode;";
+            var mode = (await command.ExecuteScalarAsync(cancellationToken))?.ToString();
+            if (string.Equals(mode, "wal", StringComparison.OrdinalIgnoreCase)) return;
+        }
+        catch (SqliteException)
+        {
+            // Fall through to the portable journal mode below.
+        }
+
+        await ExecuteAsync(connection, "PRAGMA journal_mode=DELETE;", cancellationToken);
     }
 
     private async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken)

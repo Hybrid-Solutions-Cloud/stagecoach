@@ -148,7 +148,14 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
             ["config", "set", "core.login_experience_v2=off", "core.collect_telemetry=false",
              "core.only_show_errors=true", "core.no_color=true"], cancellationToken);
         if (!result.Succeeded)
-            throw new InvalidOperationException("Stagecoach could not initialize the isolated Azure CLI profile.");
+        {
+            // This is the first write into the isolated profile, so it is where an unwritable or
+            // read-only directory shows up. Say which directory, and what the CLI actually said.
+            var detail = FirstMeaningfulLine(result.StandardError);
+            throw new InvalidOperationException(
+                $"Stagecoach could not initialize the isolated Azure CLI profile at '{directory}'." +
+                (detail is null ? string.Empty : $" Azure CLI reported: {detail}"));
+        }
     }
 
     private static string ReadAccountName(string json)
@@ -168,7 +175,12 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
     {
         var accounts = await cli.RunAsync(configDirectory, ["account", "list", "--all", "--output", "json"], cancellationToken);
         if (!accounts.Succeeded)
-            throw new InvalidOperationException("Microsoft sign-in completed, but Stagecoach could not read the signed-in account.");
+        {
+            var detail = FirstMeaningfulLine(accounts.StandardError);
+            throw new InvalidOperationException(
+                "Microsoft sign-in completed, but Stagecoach could not read the signed-in account." +
+                (detail is null ? string.Empty : $" Azure CLI reported: {detail}"));
+        }
         return ReadAccountName(accounts.StandardOutput);
     }
 
@@ -186,10 +198,35 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
             ? value.GetString()
             : null;
 
-    private static string SafeLoginError(string error) =>
-        error.Contains("cancel", StringComparison.OrdinalIgnoreCase)
-            ? "Microsoft sign-in was cancelled."
-            : "Microsoft sign-in failed. Use device-code sign-in or review Azure CLI authentication policy.";
+    /// <summary>
+    /// Turns an Azure CLI sign-in failure into something an operator can act on. The CLI's own
+    /// message is included, because collapsing every failure into one sentence made real problems
+    /// (unwritable profile directories, broker policy, proxy refusals) impossible to tell apart.
+    /// Tokens are already stripped by the runner; this additionally caps the length.
+    /// </summary>
+    private static string SafeLoginError(string error)
+    {
+        if (error.Contains("cancel", StringComparison.OrdinalIgnoreCase))
+            return "Microsoft sign-in was cancelled.";
+
+        var detail = FirstMeaningfulLine(error);
+        return detail is null
+            ? "Microsoft sign-in failed. Use device-code sign-in or review Azure CLI authentication policy."
+            : $"Microsoft sign-in failed: {detail} Try device-code sign-in, or run 'az login' in a terminal to see the full Azure CLI output.";
+    }
+
+    private static string? FirstMeaningfulLine(string error)
+    {
+        var line = error
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .LastOrDefault(candidate =>
+                candidate.Length > 0 &&
+                !candidate.StartsWith("WARNING", StringComparison.OrdinalIgnoreCase) &&
+                !candidate.StartsWith("Traceback", StringComparison.OrdinalIgnoreCase) &&
+                !candidate.StartsWith("  File \"", StringComparison.Ordinal));
+        if (line is null) return null;
+        return line.Length <= 300 ? line : string.Concat(line.AsSpan(0, 300), "…");
+    }
 
     private static void TryDeleteDirectory(string path)
     {

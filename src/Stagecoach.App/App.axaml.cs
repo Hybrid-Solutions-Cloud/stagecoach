@@ -35,6 +35,16 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Nothing should ever reach the operator as a bare crash with no record on disk.
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            CrashLog.Record("Unhandled exception", args.ExceptionObject as Exception
+                ?? new InvalidOperationException(args.ExceptionObject?.ToString() ?? "unknown"));
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            CrashLog.Record("Unobserved task exception", args.Exception);
+            args.SetObserved();
+        };
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             // Stagecoach owns live helper processes, so the app never dies just because the last

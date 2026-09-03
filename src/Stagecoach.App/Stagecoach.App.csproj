@@ -4,7 +4,16 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Gives Stagecoach.App.exe its own Win32 icon in Explorer, the taskbar, Alt-Tab, and the
+         Start menu. Without this the executable falls back to the generic .NET application icon. -->
+    <ApplicationIcon>Assets\stagecoach.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Stagecoach.Tests" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.0" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />

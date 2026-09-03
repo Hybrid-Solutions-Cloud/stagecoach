@@ -683,7 +683,24 @@ public partial class MainViewModel : ObservableObject
     partial void OnSelectedIdentityChanged(IdentityRow? value)
     {
         OnPropertyChanged(nameof(ActiveIdentityContext));
-        if (value is not null) _ = LoadScopeAsync(value.Profile.Id);
+        if (value is null) return;
+
+        // Fire-and-forget, so it must never throw into an unobserved task: an escaped exception
+        // here surfaces as a raw crash rather than the error banner.
+        _ = LoadScopeSafelyAsync(value.Profile.Id);
+    }
+
+    private async Task LoadScopeSafelyAsync(Guid identityId)
+    {
+        try
+        {
+            await LoadScopeAsync(identityId);
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = SafeMessage(exception);
+            RaiseError("Could not load tenants and subscriptions", StatusMessage);
+        }
     }
 
     private async Task ReloadIdentitiesAsync()
@@ -891,6 +908,7 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception exception)
         {
+            CrashLog.Record(message, exception);
             StatusMessage = SafeMessage(exception);
             RaiseError("That did not complete", StatusMessage);
         }
@@ -900,14 +918,39 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    private static string SafeMessage(Exception exception) => exception switch
+    internal static string SafeMessage(Exception exception)
     {
-        OperationCanceledException => "Operation cancelled.",
-        InvalidOperationException => exception.Message,
-        InvalidDataException => exception.Message,
-        HttpRequestException => "Stagecoach could not reach the release service.",
-        _ => "Stagecoach encountered an unexpected local error. Review diagnostics and retry.",
-    };
+        switch (exception)
+        {
+            case OperationCanceledException:
+                return "Operation cancelled.";
+            case InvalidOperationException:
+            case InvalidDataException:
+                return exception.Message;
+            case HttpRequestException:
+                return "Stagecoach could not reach the release service.";
+            case UnauthorizedAccessException:
+                return $"Windows denied access: {exception.Message}";
+        }
+
+        // Storage failures used to collapse into "unexpected local error", which told an operator
+        // nothing and hid the one message that actually identifies the problem. Matched by name so
+        // the view model keeps no dependency on the SQLite package.
+        if (exception.GetType().Name is "SqliteException")
+        {
+            var detail = exception.Message;
+            if (detail.Contains("readonly", StringComparison.OrdinalIgnoreCase) ||
+                detail.Contains("read-only", StringComparison.OrdinalIgnoreCase) ||
+                detail.Contains("unable to open", StringComparison.OrdinalIgnoreCase))
+                return "Stagecoach could not write its local database. Its folder is most likely " +
+                       "redirected to OneDrive or a network share, blocked by controlled folder " +
+                       "access or antivirus, or owned by a different account. " +
+                       $"Folder: {Infrastructure.StagecoachPaths.RootDirectory}. Detail: {detail}";
+            return $"Stagecoach could not read or write its local database. {detail}";
+        }
+
+        return $"Stagecoach hit an unexpected local error ({exception.GetType().Name}): {exception.Message}";
+    }
 }
 
 public sealed record FilterOption(string Label, string? Value)

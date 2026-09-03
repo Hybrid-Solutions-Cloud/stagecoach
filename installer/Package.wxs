@@ -11,8 +11,13 @@
     <SummaryInformation Description="Stagecoach Windows desktop connection hub" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of Stagecoach is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
-    <Property Id="ARPURLINFOABOUT" Value="https://github.com/Hybrid-Solutions-Cloud/stagecoach" />
+    <Property Id="ARPURLINFOABOUT" Value="https://labs.hybridsolutions.cloud/stagecoach/" />
     <Property Id="ARPCONTACT" Value="Hybrid Solutions Cloud" />
+
+    <!-- Icon for Add/Remove Programs and the Start menu shortcut. Without it Windows falls back
+         to a generic application icon in both places. -->
+    <Icon Id="Stagecoach.ico" SourceFile="..\src\Stagecoach.App\Assets\stagecoach.ico" />
+    <Property Id="ARPPRODUCTICON" Value="Stagecoach.ico" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Stagecoach" />
@@ -24,9 +29,22 @@
     <Component Id="MainExecutable" Directory="INSTALLFOLDER" Guid="{748528B4-C6F6-4E41-B50A-BB66ED52C47D}">
       <File Id="MainExecutableFile" Source="$(PublishDirectory)\Stagecoach.App.exe" KeyPath="yes">
         <Shortcut Id="StagecoachStartMenuShortcut" Directory="ApplicationProgramsFolder" Name="Stagecoach"
-                  Description="Connect to Azure, Arc, and Azure Local machines" WorkingDirectory="INSTALLFOLDER" Advertise="yes" />
+                  Description="Connect to Azure, Arc, and Azure Local machines" WorkingDirectory="INSTALLFOLDER"
+                  Icon="Stagecoach.ico" Advertise="yes" />
       </File>
       <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+    </Component>
+
+    <!-- ARPPRODUCTICON alone left DisplayIcon empty in the uninstall key, so Add/Remove Programs
+         showed a generic icon. Point it at the installed executable, which now carries the icon. -->
+    <Component Id="AddRemoveProgramsIcon" Directory="INSTALLFOLDER" Guid="{1B3C21E6-58D5-4C0E-9D2B-7F0A6C4E9A11}">
+      <RegistryValue
+        Root="HKLM"
+        Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductCode]"
+        Name="DisplayIcon"
+        Value="[INSTALLFOLDER]Stagecoach.App.exe,0"
+        Type="string"
+        KeyPath="yes" />
     </Component>
     <ComponentGroup Id="ProductFiles" Directory="INSTALLFOLDER">
       <Files Include="$(PublishDirectory)\**">
@@ -36,6 +54,7 @@
     </ComponentGroup>
     <Feature Id="MainFeature" Title="Stagecoach" Level="1">
       <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="AddRemoveProgramsIcon" />
       <ComponentGroupRef Id="ProductFiles" />
     </Feature>
   </Package>
