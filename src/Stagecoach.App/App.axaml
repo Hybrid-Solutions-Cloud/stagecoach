@@ -50,6 +50,10 @@
       <Setter Property="MinHeight" Value="26" />
     </Style>
 
+    <!-- Every visual state is applied to the template's content presenter, not to the Button.
+         The Fluent template paints that presenter over the Button's own background, so setting
+         Background on the Button alone leaves the theme's own pointerover and disabled brushes in
+         charge — which made buttons change colour on hover and never return. -->
     <Style Selector="Button">
       <Setter Property="Background" Value="{DynamicResource StageColorSurface}" />
       <Setter Property="Foreground" Value="{DynamicResource StageColorInk}" />
@@ -57,16 +61,31 @@
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="0" />
     </Style>
-    <Style Selector="Button:pointerover">
+    <Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource StageColorSurface}" />
+      <Setter Property="Foreground" Value="{DynamicResource StageColorInk}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StageColorLineStrong}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource StageColorAccentSoft}" />
       <Setter Property="Foreground" Value="{DynamicResource StageColorInk}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StageColorLineStrong}" />
+    </Style>
+    <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource StageColorSurfaceAlt}" />
+      <Setter Property="Foreground" Value="{DynamicResource StageColorInk}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StageColorLineStrong}" />
     </Style>
     <!-- A disabled control must still read as a control. The previous washed-out treatment made
          buttons look absent while a background operation held them disabled. -->
-    <Style Selector="Button:disabled">
+    <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource StageColorSurfaceAlt}" />
       <Setter Property="Foreground" Value="#6F6A61" />
       <Setter Property="BorderBrush" Value="{DynamicResource StageColorLineStrong}" />
+    </Style>
+    <Style Selector="Button:disabled">
       <Setter Property="Opacity" Value="1" />
     </Style>
     <Style Selector="Button.primary">
@@ -77,8 +96,20 @@
       <Setter Property="Padding" Value="18,9" />
       <Setter Property="CornerRadius" Value="0" />
     </Style>
-    <Style Selector="Button.primary:pointerover">
+    <Style Selector="Button.primary /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource StagecoachAccentBrush}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StagecoachAccentBrush}" />
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource StageColorAccentStrong}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StageColorAccentStrong}" />
+    </Style>
+    <Style Selector="Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource StageColorAccentStrong}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderBrush" Value="{DynamicResource StageColorAccentStrong}" />
     </Style>
     <Style Selector="Button.header-action">
       <Setter Property="Background" Value="Transparent" />
@@ -89,27 +120,30 @@
       <Setter Property="Padding" Value="12,7" />
       <Setter Property="CornerRadius" Value="0" />
     </Style>
-    <Style Selector="Button.header-action:pointerover">
+    <Style Selector="Button.header-action /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="#86908F" />
+      <Setter Property="Foreground" Value="#F7FAF9" />
+    </Style>
+    <Style Selector="Button.header-action:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="#455252" />
       <Setter Property="BorderBrush" Value="#B6C0BF" />
       <Setter Property="Foreground" Value="White" />
     </Style>
-    <Style Selector="Button.header-action:pressed">
+    <Style Selector="Button.header-action:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="#1D2626" />
       <Setter Property="Foreground" Value="White" />
     </Style>
     <!-- On the dark header band the shared disabled treatment rendered as an empty rectangle. -->
-    <Style Selector="Button.header-action:disabled">
-      <Setter Property="Background" Value="#33404040" />
+    <Style Selector="Button.header-action:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#3A4545" />
       <Setter Property="BorderBrush" Value="#5C6665" />
       <Setter Property="Foreground" Value="#9FA9A8" />
-      <Setter Property="Opacity" Value="1" />
     </Style>
-    <Style Selector="Button.primary:disabled">
+    <Style Selector="Button.primary:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="#C9A899" />
       <Setter Property="BorderBrush" Value="#C9A899" />
       <Setter Property="Foreground" Value="#FFF6F1" />
-      <Setter Property="Opacity" Value="1" />
     </Style>
 
     <Style Selector="TextBox">

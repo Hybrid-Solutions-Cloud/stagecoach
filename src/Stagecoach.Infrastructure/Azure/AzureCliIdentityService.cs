@@ -37,8 +37,26 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
         }
         if (!string.Equals(configDirectory, finalDirectory, StringComparison.OrdinalIgnoreCase))
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(finalDirectory)!);
-            Directory.Move(Path.GetDirectoryName(configDirectory)!, Path.GetDirectoryName(finalDirectory)!);
+            // The signed-in profile lives in <identities>\<pending id>\azure and has to become
+            // <identities>\<stable id>\azure. Move the id-level folders, not the 'azure' folders.
+            var pendingRoot = Path.GetDirectoryName(configDirectory)!;
+            var finalRoot = Path.GetDirectoryName(finalDirectory)!;
+
+            // Create the *parent* of the destination. Creating the destination itself guaranteed
+            // that the move below threw "a file or directory with the same name already exists",
+            // so adding an account failed every time even after a successful Microsoft sign-in.
+            Directory.CreateDirectory(Path.GetDirectoryName(finalRoot)!);
+
+            // A destination left behind by an earlier failed attempt is orphaned — the store has
+            // already been checked and holds no identity with this id — so it is safe to clear.
+            if (Directory.Exists(finalRoot)) TryDeleteDirectory(finalRoot);
+
+            if (Directory.Exists(finalRoot))
+                throw new InvalidOperationException(
+                    $"Stagecoach could not replace the existing profile folder '{finalRoot}'. " +
+                    "Close any program using it, or delete that folder, then sign in again.");
+
+            Directory.Move(pendingRoot, finalRoot);
         }
 
         var identity = new AzureIdentityProfile(

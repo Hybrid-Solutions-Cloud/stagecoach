@@ -58,7 +58,7 @@ pwsh ./scripts/Run.ps1 -Configuration Release
 For a self-contained ZIP and MSI:
 
 ```powershell
-pwsh ./scripts/Package.ps1 -Version 0.3.1 -Installer
+pwsh ./scripts/Package.ps1 -Version 0.3.2 -Installer
 ```
 
 Then follow [the quickstart](docs/guide/quickstart.md) and
