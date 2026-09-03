@@ -1,51 +1,77 @@
 # Architecture
 
-Stagecoach is a Windows-only Avalonia application on .NET 10. It uses no localhost server, browser runtime, service principal, or shared cloud database.
+Stagecoach is a native Windows desktop application: Avalonia on .NET 10, packaged x64,
+self-contained. There is no service, no web server, and no shared broker. All state belongs to the
+signed-in Windows user.
 
-```text
-Avalonia UI
-  ├─ identity and scope management
-  ├─ merged estate, route selection, sessions
-  └─ credential mappings, settings, remediation confirmation
-          │
-          ▼
-Core contracts and models
-          │
-          ▼
-Infrastructure
-  ├─ isolated Azure CLI profiles (WAM/device code)
-  ├─ Azure Resource Graph discovery and correlation
-  ├─ SQLCipher metadata + DPAPI database key
-  ├─ Windows Credential Manager
-  └─ managed az / mstsc / ssh processes
-          │
-          ▼
-Azure Resource Manager, Resource Graph, Bastion, Arc relay
-```
+## Projects
 
-## Identity model
+| Project | Responsibility |
+|---|---|
+| `Stagecoach.App` | Avalonia shell, machine list, tray and window lifecycle, themes |
+| `Stagecoach.Core` | Domain models, application contracts, release update service |
+| `Stagecoach.Infrastructure` | Azure CLI profiles, Resource Graph discovery, encrypted SQLite, Windows Credential Manager, process and session orchestration, update installer launcher |
+| `Stagecoach.AskPass` | Narrow OpenSSH password bridge |
+| `Stagecoach.Tests` | Domain, persistence, routing, lifecycle, and update-verification tests |
+| `installer/` | WiX v5 MSI |
+| `scripts/` | PowerShell 7 build, run, and packaging commands |
 
-An Entra identity owns an isolated Azure CLI configuration directory. Tenant and subscription scope is stored separately and newly discovered scope requires review. A machine may have access paths from multiple identities; Stagecoach never treats one process-wide Azure session as authoritative.
+## Identity isolation
 
-Connection identities are different objects. They represent accounts inside target operating systems and may be mapped by machine, tag, domain, resource group, subscription, or tenant. Arc relay and target desktop identities can be different.
+Each Entra account gets its own `AZURE_CONFIG_DIR` under `%LOCALAPPDATA%\Stagecoach`. Azure CLI
+uses Web Account Manager for interactive sign-in and encrypts its own MSAL token cache inside that
+directory. Stagecoach never reads token files, never imports your default Azure CLI context, and
+never modifies `~/.azure`.
 
-## Discovery model
+Isolation is also why one account's expired session cannot block discovery for another.
 
-One bounded Resource Graph query retrieves VMs, Arc machines, Azure Local VM instances, extensions, NICs, public IPs, VNets/peerings, and Bastion hosts. The correlator de-duplicates Azure Local parent/child resources and calculates candidate routes with an explicit readiness state and reason.
+## Discovery
 
-## Process boundary
+Azure Resource Graph reads, per included subscription:
 
-All launch arguments are passed through `ProcessStartInfo.ArgumentList`; no target-derived command text is evaluated by a shell. Bastion and Arc helpers are tracked as managed sessions. RDP credentials are staged as session-persistent Windows credentials and removed when the client ends. SSH password relay uses the small `Stagecoach.AskPass` helper, which resolves one Windows Credential Manager profile at invocation time.
+- `Microsoft.Compute/virtualMachines`
+- `Microsoft.HybridCompute/machines`
+- `Microsoft.Network/bastionHosts`
+- network interfaces, IP configurations, public IPs, virtual networks
+- virtual network peerings in both directions
+- VM and Arc extensions relevant to Entra sign-in and OpenSSH
+- Hybrid Connectivity endpoints where visible
 
-## Local files
+A machine seen by two accounts is one row with two access paths, not two rows.
 
-Per-user state is under `%LOCALAPPDATA%\Stagecoach`:
+## Storage
 
-- `stagecoach.db`: SQLCipher-encrypted inventory, scope, mappings, favorites, and recents
-- `stagecoach.db.key`: DPAPI CurrentUser-protected database key
-- `settings.json`: non-secret appearance and refresh settings
-- `identities\<id>\azure`: isolated Azure CLI token/config state
-- `azure-cli-extensions`: shared CLI extension installation
-- `sessions`: short-lived `.rdp` files with endpoint and username only
+| Data | Store |
+|---|---|
+| Machines, access paths, scope, favourites, pins, settings | SQLCipher-encrypted SQLite under `%LOCALAPPDATA%\Stagecoach` |
+| Database key | 256-bit key protected with Windows DPAPI at `CurrentUser` scope |
+| Local account passwords | Windows Credential Manager |
+| Azure tokens | Azure CLI's own encrypted cache, inside each isolated profile |
 
-Resolved passwords and Azure tokens are never stored in the database or settings file.
+State is not portable to another Windows account, by design.
+
+## Sessions
+
+Helpers start with redirected output, hidden windows, and no secret-bearing command line. A session
+registry tracks the process tree, endpoint, local port, route, start time, and health. Closing a
+Remote Desktop or SSH client reaps its helper and returns its port. Exiting the application is
+guarded while any session is live.
+
+## Window shell
+
+One window: header band, context strip showing the active account, an actionable error banner,
+content, status bar. Navigation is a left product strip — Machines, Connect identities, Local
+accounts, Sessions, Settings — with Machines as the landing screen.
+
+The window shrinks to 320 × 300 and uses compact density with flat, square, opaque surfaces so it
+fits a laptop and renders cleanly inside an RDP session.
+
+## Security boundaries
+
+- Discovery is read-only. The single Azure write — Arc OpenSSH deployment — requires an explicit
+  preview and confirmation.
+- No password reaches SQLite, JSON, logs, arguments, or `.rdp` files.
+- Diagnostics carry stable local correlation IDs and redacted error categories, never credentials
+  or tokens.
+- A connection never silently falls back to a different Azure or local account.
+- Updates only come from the signed release repository and are hash-verified twice before running.

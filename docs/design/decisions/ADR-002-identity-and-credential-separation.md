@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-29
+- **Amended:** 2026-09-02 — the mapping-rule engine and the two-identity Arc model are superseded by [ADR-005](./ADR-005-pinned-local-accounts-and-single-arc-identity.md). The separation of Azure identities from in-guest accounts, which is the substance of this ADR, still stands.
 
 ## Context
 

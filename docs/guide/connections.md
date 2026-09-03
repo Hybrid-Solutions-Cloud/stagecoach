@@ -1,18 +1,88 @@
 # Connection routes
 
-| Target | Route | Behavior |
-|---|---|---|
-| Windows Azure VM with public IP | Direct RDP | Stages mapped Windows credential and starts `mstsc.exe` |
-| Linux Azure VM with public IP | Direct SSH | Starts Windows Terminal or `cmd.exe` with OpenSSH |
-| Windows Azure VM behind Standard+ Bastion | Bastion tunnel RDP | Starts an Azure CLI tunnel, waits for the loopback port, then starts RDP |
-| Azure VM with Entra-native Bastion flow | Bastion native RDP | Starts the Bastion native client; Entra/MFA interaction can still be required |
-| Windows Arc/Azure Local | Arc RDP | Runs `az ssh arc --rdp`, with separate relay and target account mappings supported |
-| Linux Arc/Azure Local | Arc SSH | Runs `az ssh arc` with the owning Entra profile |
+Stagecoach correlates each machine against the network topology your account can read, then picks
+the best route it can actually use. A route is a verdict, not a guess.
 
-Stagecoach prefers a ready Bastion tunnel, then Arc RDP, then interactive native routes, then direct routes. The operator can choose another discovered route in the Estate grid.
+## Routes
 
-One click means Stagecoach performs routing, profile selection, credential lookup, helper startup, and client launch. It does not suppress security controls that demand interaction.
+| Route | Used for |
+|---|---|
+| **Bastion tunnel RDP** | Windows Azure VM reachable through an Azure Bastion host with native client tunneling |
+| **Bastion RDP** | Windows Azure VM using the Bastion native-client Entra flow |
+| **Bastion SSH** | Linux Azure VM through Bastion |
+| **Direct RDP** | Windows Azure VM with a reachable address and direct access explicitly enabled |
+| **Direct SSH** | Linux Azure VM with a reachable address |
+| **Arc RDP** | Windows Azure Arc or Azure Local machine, Remote Desktop relayed over Arc SSH |
+| **Arc SSH** | Linux or Windows Arc machine, SSH over the Arc Hybrid Connectivity endpoint |
 
-## Arc readiness
+Override the choice per machine with **Edit → Route override**.
 
-Arc relay requires a connected Arc agent, supported agent version, Hybrid Connectivity endpoint/service configuration, a running target SSH service, and client-side Azure CLI/OpenSSH prerequisites. WindowsOpenSSH extension installation is an Azure write and therefore appears only behind the **Prepare Arc** preview and explicit **Apply approved change** action.
+## Readiness
+
+Every route carries one of these, shown in the machine list:
+
+| Shown | Meaning |
+|---|---|
+| **Ready** | The route can be used now |
+| **Sign-in** | Reachable, but Entra or Conditional Access interaction is required |
+| **Prereq** | Something is missing, such as the OpenSSH extension on an Arc machine |
+| **Offline** | The VM is deallocated or the Arc agent is disconnected |
+| **Denied** | Your account cannot read a resource the route depends on |
+| **Unsupported** | No supported route exists for this machine |
+
+Powered-off VMs and disconnected Arc agents stay in the list with an explanation rather than
+disappearing.
+
+## Bastion correlation
+
+Bastion eligibility is derived from topology, not assumed:
+
+1. VM network interface to its subnet and virtual network.
+2. Bastion host to the virtual network holding its `AzureBastionSubnet`.
+3. Same-virtual-network reachability.
+4. Virtual network and global peering reachability.
+5. Bastion SKU and native-client / tunneling configuration.
+6. Read permissions on the VM, interface, virtual network, and Bastion host.
+
+Any step that cannot be confirmed produces **Prereq** or **Denied** with the reason, rather than a
+route that fails at launch.
+
+## What happens on Connect
+
+1. The selected Entra session is validated silently.
+2. The best ready route is selected, or your override is used.
+3. The pinned local account is resolved — or you are asked once, and it is remembered.
+4. The password is read from Windows Credential Manager, at launch only.
+5. A temporary `TERMSRV/<endpoint>` credential is staged so Remote Desktop does not prompt.
+6. The Azure CLI helper starts **hidden**, in that identity's isolated environment.
+7. `mstsc.exe` or OpenSSH starts.
+8. Both the helper and the local port are monitored.
+9. The temporary credential and helper state are removed when the session ends.
+10. Non-secret session metadata is recorded.
+
+No console window is ever shown. Credentials never appear in arguments, files, the database, or
+logs.
+
+## Arc: one account for both hops
+
+An Arc RDP session needs SSH first and Remote Desktop second. Both use the **same** pinned local
+account. Stagecoach never asks you twice, and never asks you to type a local administrator account
+for an Arc machine.
+
+## What one click cannot do
+
+Stagecoach removes redundant prompts. It cannot remove:
+
+- Conditional Access or MFA challenges
+- expired or revoked Azure sessions needing re-authentication
+- the Entra prompts the Microsoft native-client Bastion flow requires
+- first-use host-key trust decisions
+- a target password changed outside the account you stored
+
+These surface as a clear message in the error banner, not a hidden process waiting forever.
+
+## Arc prerequisites
+
+When an Arc machine is missing OpenSSH, **Prepare Arc OpenSSH** shows the exact machine, account,
+subscription, and operations before anything happens. Discovery is read-only; this is the only
+Azure write Stagecoach performs, and only after you explicitly approve it.

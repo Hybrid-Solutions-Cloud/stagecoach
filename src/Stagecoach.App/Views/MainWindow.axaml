@@ -5,238 +5,624 @@
         x:Class="Stagecoach.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="Stagecoach"
-        Width="1420" Height="900" MinWidth="1080" MinHeight="680"
+        Width="1400" Height="860" MinWidth="320" MinHeight="300"
         WindowStartupLocation="CenterScreen">
-  <Grid RowDefinitions="Auto,*,Auto">
-    <Border Grid.Row="0" Background="#17202A" Padding="22,15">
-      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="18">
-        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-          <Border Width="38" Height="38" CornerRadius="19" Background="{DynamicResource StagecoachAccentBrush}">
-            <TextBlock Text="S" FontSize="21" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
-          </Border>
-          <StackPanel>
-            <TextBlock Text="STAGECOACH" FontSize="18" FontWeight="SemiBold" Foreground="White" />
-            <TextBlock Text="One identity hub. Every reachable machine. One click." FontSize="11" Foreground="#BFC9D4" />
+
+  <!-- Row 0 header band, row 1 actionable error, row 2 content, row 3 status bar.
+       Min size stays small so the window fits a laptop and a windowed RDP session. -->
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Background="{DynamicResource StageColorCanvas}">
+
+    <Border Grid.Row="0" Background="{DynamicResource StageColorHeader}">
+      <Grid RowDefinitions="Auto,Auto">
+        <Grid ColumnDefinitions="*,Auto" Margin="18,10" ColumnSpacing="16">
+          <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+            <Border Width="38" Height="38" Background="{DynamicResource StagecoachAccentBrush}">
+              <TextBlock Text="S" FontSize="21" FontWeight="Bold" Foreground="White"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel>
+              <TextBlock Text="Stagecoach" Foreground="White"
+                         FontSize="{StaticResource StageFontSize18}" FontWeight="SemiBold" />
+              <TextBlock Text="One identity hub. Every reachable machine. One click."
+                         Foreground="#AEB9B5" FontSize="{StaticResource StageFontSize11}" />
+            </StackPanel>
           </StackPanel>
-        </StackPanel>
-        <TextBox Grid.Column="1" Text="{Binding SearchText}" PlaceholderText="Search machines, domains, resource groups, or subscriptions"
-                 MaxWidth="620" HorizontalAlignment="Stretch" VerticalAlignment="Center" />
-        <Button Grid.Column="2" Classes="primary" Command="{Binding SyncEstateCommand}" IsEnabled="{Binding !IsBusy}">
-          <StackPanel Orientation="Horizontal" Spacing="8"><TextBlock Text="↻" /><TextBlock Text="Sync estate" /></StackPanel>
-        </Button>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <Border BorderBrush="#667170" BorderThickness="1" Padding="12,7">
+              <TextBlock Text="READ-ONLY DISCOVERY · LOCAL STATE" Foreground="#E7ECEA"
+                         FontSize="{StaticResource StageFontSize11}" FontWeight="SemiBold" />
+            </Border>
+            <Button Classes="header-action" Content="↻  Sync estate"
+                    Command="{Binding SyncEstateCommand}" IsEnabled="{Binding !IsBusy}"
+                    AutomationProperties.Name="Sync the Azure estate" />
+          </StackPanel>
+        </Grid>
+
+        <!-- Which Entra account is live is never a mystery. -->
+        <Border Grid.Row="1" Background="{DynamicResource StageColorContext}"
+                BorderBrush="{DynamicResource StageColorLine}" BorderThickness="0,1,0,0" Padding="20,9">
+          <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="16">
+            <TextBlock Text="ACTIVE ACCOUNT" Foreground="{DynamicResource StageColorMuted}"
+                       FontSize="{StaticResource StageFontSize11}" FontWeight="Bold" VerticalAlignment="Center" />
+            <Border Grid.Column="1" Background="{DynamicResource StageColorSurface}"
+                    BorderBrush="{DynamicResource StageColorLineStrong}" BorderThickness="1" Padding="10,6">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Border Width="7" Background="#1A9B83" />
+                <TextBlock Text="{Binding ActiveIdentityContext}" FontWeight="SemiBold" VerticalAlignment="Center" />
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="3" Background="{DynamicResource StageColorGoodSoft}"
+                    BorderBrush="{DynamicResource StageColorGood}" BorderThickness="1" Padding="10,5"
+                    IsVisible="{Binding HasMachines}">
+              <TextBlock Text="{Binding EstateSummary}" Foreground="{DynamicResource StageColorGood}"
+                         FontSize="{StaticResource StageFontSize11}" FontWeight="Bold" />
+            </Border>
+          </Grid>
+        </Border>
       </Grid>
     </Border>
 
-    <TabControl Grid.Row="1" SelectedIndex="{Binding SelectedTabIndex}" TabStripPlacement="Left">
-      <TabItem Header="Estate">
-        <Grid Margin="22" RowDefinitions="Auto,*" RowSpacing="14">
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-            <StackPanel>
-              <TextBlock Text="Estate" FontSize="28" FontWeight="SemiBold" />
-              <TextBlock Text="Every machine visible through your selected Entra identities." Opacity="0.7" />
-            </StackPanel>
-            <Border Grid.Column="1" Classes="card" Padding="14,8">
-              <TextBlock Text="{Binding Machines.Count, StringFormat='{}{0} machines'}" VerticalAlignment="Center" />
-            </Border>
-          </Grid>
-          <DataGrid Grid.Row="1" ItemsSource="{Binding Machines}" SelectedItem="{Binding SelectedMachine}"
-                    AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
-                    CanUserResizeColumns="True" HeadersVisibility="Column">
-            <DataGrid.Columns>
-              <DataGridTemplateColumn Header="" Width="42">
-                <DataGridTemplateColumn.CellTemplate>
-                  <DataTemplate x:DataType="vm:MachineRow">
-                    <Button Content="{Binding Favorite}" Padding="6" Command="{Binding $parent[Window].DataContext.ToggleFavoriteCommand}" CommandParameter="{Binding}" />
-                  </DataTemplate>
-                </DataGridTemplateColumn.CellTemplate>
-              </DataGridTemplateColumn>
-              <DataGridTextColumn Header="Machine" Binding="{Binding Name}" Width="2*" />
-              <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="110" />
-              <DataGridTextColumn Header="OS" Binding="{Binding OperatingSystem}" Width="90" />
-              <DataGridTextColumn Header="Environment" Binding="{Binding Environment}" Width="150" />
-              <DataGridTextColumn Header="State" Binding="{Binding State}" Width="140" />
-              <DataGridTemplateColumn Header="Connection route" Width="230">
-                <DataGridTemplateColumn.CellTemplate>
-                  <DataTemplate x:DataType="vm:MachineRow">
-                    <ComboBox ItemsSource="{Binding Paths}" SelectedItem="{Binding SelectedRoute}" />
-                  </DataTemplate>
-                </DataGridTemplateColumn.CellTemplate>
-              </DataGridTemplateColumn>
-              <DataGridTextColumn Header="Readiness" Binding="{Binding Readiness}" Width="135" />
-              <DataGridTemplateColumn Header="" Width="190">
-                <DataGridTemplateColumn.CellTemplate>
-                  <DataTemplate x:DataType="vm:MachineRow">
-                    <StackPanel Orientation="Horizontal" Spacing="5">
-                      <Button Classes="primary" Content="Connect" Command="{Binding $parent[Window].DataContext.ConnectCommand}" CommandParameter="{Binding}" />
-                      <Button Content="Prepare Arc" Command="{Binding $parent[Window].DataContext.PreviewArcRemediationCommand}" CommandParameter="{Binding}" />
+    <Border Grid.Row="1" IsVisible="{Binding HasActionableError}" Background="{DynamicResource StageColorDangerSoft}"
+            BorderBrush="{DynamicResource StageColorDanger}" BorderThickness="4,0,0,0" Margin="18,12,18,0" Padding="14"
+            AutomationProperties.LiveSetting="Assertive">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+        <TextBlock Text="!" FontSize="{StaticResource StageFontSize22}" FontWeight="Bold"
+                   Foreground="{DynamicResource StageColorDanger}" />
+        <StackPanel Grid.Column="1" Spacing="4">
+          <TextBlock Text="{Binding ErrorTitle}" FontSize="{StaticResource StageFontSize16}" FontWeight="SemiBold" />
+          <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
+        </StackPanel>
+        <Button Grid.Column="2" Content="Dismiss" Command="{Binding DismissErrorCommand}" VerticalAlignment="Top" />
+      </Grid>
+    </Border>
+
+    <TabControl Grid.Row="2" Classes="product-shell" SelectedIndex="{Binding SelectedTabIndex}">
+
+      <!-- ============================================================ MACHINES: the landing screen -->
+      <TabItem Header="▤  Machines">
+        <Grid>
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="30,24,30,20" Spacing="14">
+
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="24">
+                <StackPanel Spacing="6">
+                  <TextBlock Classes="screen-eyebrow" Text="AZURE ESTATE" />
+                  <TextBlock Classes="screen-title" Text="Pick a machine" />
+                  <TextBlock Classes="screen-description"
+                             Text="Every Azure VM, Azure Arc server, and Azure Local machine your connected accounts can reach. Selecting one connects it." />
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
+                  <TextBlock Text="{Binding EstateSummary}" Foreground="{DynamicResource StageColorGood}"
+                             FontSize="{StaticResource StageFontSize16}" FontWeight="Bold" HorizontalAlignment="Right" />
+                  <TextBlock Text="{Binding WorkstationStatus}" Foreground="{DynamicResource StageColorMuted}"
+                             FontSize="{StaticResource StageFontSize11}" HorizontalAlignment="Right"
+                             TextTrimming="CharacterEllipsis" MaxWidth="360" />
+                </StackPanel>
+              </Grid>
+
+              <Border Classes="panel">
+                <StackPanel Spacing="10">
+                  <TextBox Classes="estate-search" Text="{Binding SearchText}"
+                           PlaceholderText="Search machines, resource groups, domains, tenants, or subscriptions"
+                           AutomationProperties.Name="Search machines" />
+                  <WrapPanel Orientation="Horizontal">
+                    <CheckBox Content="Favorites" IsChecked="{Binding FavoritesOnly}" Margin="0,0,14,6" />
+                    <CheckBox Content="Ready only" IsChecked="{Binding ReadyOnly}" Margin="0,0,14,6" />
+                    <CheckBox Content="Pinned account" IsChecked="{Binding PinnedOnly}" Margin="0,0,14,6" />
+                  </WrapPanel>
+                  <Grid ColumnDefinitions="*,*,*,*,Auto" ColumnSpacing="10" RowSpacing="8">
+                    <StackPanel Spacing="4">
+                      <TextBlock Classes="field-label" Text="Tenant" />
+                      <ComboBox Classes="estate-filter" ItemsSource="{Binding TenantFilters}"
+                                SelectedItem="{Binding SelectedTenantFilter}"
+                                AutomationProperties.Name="Tenant filter" />
                     </StackPanel>
-                  </DataTemplate>
-                </DataGridTemplateColumn.CellTemplate>
-              </DataGridTemplateColumn>
-            </DataGrid.Columns>
-          </DataGrid>
-        </Grid>
-      </TabItem>
-
-      <TabItem Header="Identities &amp; scope">
-        <Grid Margin="22" ColumnDefinitions="360,*" ColumnSpacing="18">
-          <StackPanel Spacing="14">
-            <StackPanel>
-              <TextBlock Text="Entra identities" FontSize="26" FontWeight="SemiBold" />
-              <TextBlock Text="Each account has an isolated, Windows-encrypted Azure CLI session." TextWrapping="Wrap" Opacity="0.7" />
-            </StackPanel>
-            <Border Classes="card">
-              <StackPanel Spacing="10">
-                <TextBlock Text="Add an identity" FontWeight="SemiBold" />
-                <TextBox Text="{Binding NewIdentityName}" PlaceholderText="Friendly name (optional)" />
-                <Button Classes="primary" Content="Use my Windows account / choose account" Command="{Binding AddWindowsAccountCommand}" />
-                <Button Content="Use device code instead" Command="{Binding AddDeviceCodeAccountCommand}" />
-              </StackPanel>
-            </Border>
-            <ListBox ItemsSource="{Binding Identities}" SelectedItem="{Binding SelectedIdentity}">
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:IdentityRow">
-                  <Border Classes="card" Margin="0,0,0,8">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <StackPanel><TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" /><TextBlock Text="{Binding AccountName}" Opacity="0.7" /><TextBlock Text="{Binding State}" FontSize="11" /></StackPanel>
-                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5">
-                        <Button Content="Reauth" Command="{Binding $parent[Window].DataContext.ReauthenticateCommand}" CommandParameter="{Binding}" />
-                        <Button Content="Remove" Command="{Binding $parent[Window].DataContext.RemoveIdentityCommand}" CommandParameter="{Binding}" />
+                    <StackPanel Grid.Column="1" Spacing="4">
+                      <TextBlock Classes="field-label" Text="Subscription" />
+                      <ComboBox Classes="estate-filter" ItemsSource="{Binding SubscriptionFilters}"
+                                SelectedItem="{Binding SelectedSubscriptionFilter}"
+                                AutomationProperties.Name="Subscription filter" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="4">
+                      <TextBlock Classes="field-label" Text="Source" />
+                      <ComboBox Classes="estate-filter" ItemsSource="{Binding SourceFilters}"
+                                SelectedItem="{Binding SelectedSourceFilter}"
+                                AutomationProperties.Name="Source filter" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="3" Spacing="4">
+                      <TextBlock Classes="field-label" Text="OS" />
+                      <ComboBox Classes="estate-filter" ItemsSource="{Binding OperatingSystemFilters}"
+                                SelectedItem="{Binding SelectedOperatingSystemFilter}"
+                                AutomationProperties.Name="Operating system filter" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="4" Spacing="4">
+                      <TextBlock Classes="field-label" Text="State" />
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ComboBox Classes="estate-filter" MinWidth="130" ItemsSource="{Binding StateFilters}"
+                                  SelectedItem="{Binding SelectedStateFilter}"
+                                  AutomationProperties.Name="Power state filter" />
+                        <Button Content="Reset" MinHeight="40" Command="{Binding ResetFiltersCommand}" />
                       </StackPanel>
+                    </StackPanel>
+                  </Grid>
+                </StackPanel>
+              </Border>
+
+              <Border Classes="panel" Padding="0">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                  <Grid RowDefinitions="Auto,*" MinWidth="1020">
+                    <!-- Header and rows share one column definition so they always line up. -->
+                    <Grid Grid.Row="0" ColumnDefinitions="36,2*,80,90,150,150,120,130,90,190"
+                          Margin="8,8,8,6" Background="{DynamicResource StageColorSurfaceAlt}">
+                      <TextBlock Classes="column-header" Text="" />
+                      <TextBlock Grid.Column="1" Classes="column-header" Text="MACHINE" Margin="6,8" />
+                      <TextBlock Grid.Column="2" Classes="column-header" Text="SOURCE" Margin="6,8" />
+                      <TextBlock Grid.Column="3" Classes="column-header" Text="OS" Margin="6,8" />
+                      <TextBlock Grid.Column="4" Classes="column-header" Text="TENANT" Margin="6,8" />
+                      <TextBlock Grid.Column="5" Classes="column-header" Text="SUBSCRIPTION" Margin="6,8" />
+                      <TextBlock Grid.Column="6" Classes="column-header" Text="STATE" Margin="6,8" />
+                      <TextBlock Grid.Column="7" Classes="column-header" Text="ROUTE" Margin="6,8" />
+                      <TextBlock Grid.Column="8" Classes="column-header" Text="ACCOUNT" Margin="6,8" />
+                      <TextBlock Grid.Column="9" Classes="column-header" Text="" Margin="6,8" />
                     </Grid>
+                    <ListBox Grid.Row="1" Classes="estate-list" MinHeight="220" MaxHeight="560"
+                             ItemsSource="{Binding Machines}" SelectedItem="{Binding SelectedMachine}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             AutomationProperties.Name="Discovered machines">
+                      <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:MachineRow">
+                          <Grid ColumnDefinitions="36,2*,80,90,150,150,120,130,90,190" Margin="6,6">
+                            <Button Content="{Binding Favorite}" Padding="4,2" BorderThickness="0"
+                                    Background="Transparent" Foreground="#E3A008"
+                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ToggleFavoriteCommand}"
+                                    CommandParameter="{Binding}"
+                                    AutomationProperties.Name="Toggle favorite" />
+                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="2" Text="{Binding Source}" VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="3" Text="{Binding OperatingSystem}" VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="4" Text="{Binding Tenant}" TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="5" Text="{Binding Subscription}" TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="6" Text="{Binding State}" VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="7" Text="{Binding Route}" VerticalAlignment="Center" Margin="6,0" />
+                            <TextBlock Grid.Column="8" Text="{Binding Account}" VerticalAlignment="Center" Margin="6,0"
+                                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <StackPanel Grid.Column="9" Orientation="Horizontal" Spacing="6" Margin="6,0">
+                              <Button Classes="primary" Content="Connect" MinHeight="30" Padding="14,5"
+                                      Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ConnectCommand}"
+                                      CommandParameter="{Binding}"
+                                      AutomationProperties.Name="Connect to this machine" />
+                              <Button Content="Edit" MinHeight="30" Padding="12,5"
+                                      Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).EditMachineCommand}"
+                                      CommandParameter="{Binding}"
+                                      AutomationProperties.Name="Edit this machine" />
+                            </StackPanel>
+                          </Grid>
+                        </DataTemplate>
+                      </ListBox.ItemTemplate>
+                    </ListBox>
+                  </Grid>
+                </ScrollViewer>
+              </Border>
+
+              <Border Classes="info" IsVisible="{Binding !HasIdentities}">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="No Entra account is connected yet" FontWeight="SemiBold" />
+                  <TextBlock TextWrapping="Wrap"
+                             Text="Open Connect identities in the left navigation, sign in with your Windows account, include the subscriptions you want, and scan." />
+                </StackPanel>
+              </Border>
+
+              <Border Classes="panel" IsVisible="{Binding SelectedMachine, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+                <StackPanel Spacing="8">
+                  <TextBlock Classes="screen-eyebrow" Text="SELECTED MACHINE" />
+                  <TextBlock Text="{Binding SelectedMachine.Name}" FontSize="{StaticResource StageFontSize20}" />
+                  <TextBlock Text="{Binding SelectedMachine.Tenant, StringFormat='Tenant  {0}'}" Opacity="0.75" />
+                  <TextBlock Text="{Binding SelectedMachine.Subscription, StringFormat='Subscription  {0}'}" Opacity="0.75" />
+                  <TextBlock Text="{Binding SelectedMachine.Route, StringFormat='Route  {0}'}" Opacity="0.75" />
+                  <TextBlock Text="{Binding SelectedMachine.Account, StringFormat='Local account  {0}'}" Opacity="0.75" />
+                  <Border Classes="callout" IsVisible="{Binding SelectedMachine.IsReady}">
+                    <TextBlock Text="{Binding SelectedMachine.ReasonText}" TextWrapping="Wrap" />
                   </Border>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
-          </StackPanel>
+                  <Border Classes="warning" IsVisible="{Binding !SelectedMachine.IsReady}">
+                    <TextBlock Text="{Binding SelectedMachine.ReasonText}" TextWrapping="Wrap" />
+                  </Border>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="primary" Content="Connect"
+                            Command="{Binding ConnectCommand}" CommandParameter="{Binding SelectedMachine}" />
+                    <Button Content="Edit / pin account"
+                            Command="{Binding EditMachineCommand}" CommandParameter="{Binding SelectedMachine}" />
+                    <Button Content="Prepare Arc OpenSSH"
+                            Command="{Binding PreviewArcRemediationCommand}" CommandParameter="{Binding SelectedMachine}" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
 
-          <Grid Grid.Column="1" RowDefinitions="Auto,*,*" RowSpacing="14">
-            <Grid ColumnDefinitions="*,Auto">
-              <StackPanel><TextBlock Text="Selected scan scope" FontSize="22" FontWeight="SemiBold" /><TextBlock Text="New scope stays excluded until you include it." Opacity="0.7" /></StackPanel>
-              <Button Grid.Column="1" Content="Refresh available scope" Command="{Binding RefreshIdentityScopeCommand}" />
-            </Grid>
-            <Border Grid.Row="1" Classes="card">
-              <Grid RowDefinitions="Auto,*" RowSpacing="8">
-                <TextBlock Text="Tenants" FontWeight="SemiBold" />
-                <ListBox Grid.Row="1" ItemsSource="{Binding Tenants}">
-                  <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:TenantRow">
-                      <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,5">
-                        <StackPanel><TextBlock Text="{Binding DisplayName}" /><TextBlock Text="{Binding TenantId}" FontSize="10" Opacity="0.55" /></StackPanel>
-                        <TextBlock Grid.Column="1" Text="{Binding Selection}" VerticalAlignment="Center" Margin="12,0" />
-                        <Button Grid.Column="2" Content="Include / exclude" Command="{Binding $parent[Window].DataContext.ToggleTenantCommand}" CommandParameter="{Binding}" />
-                      </Grid>
-                    </DataTemplate>
-                  </ListBox.ItemTemplate>
-                </ListBox>
-              </Grid>
-            </Border>
-            <Border Grid.Row="2" Classes="card">
-              <Grid RowDefinitions="Auto,*" RowSpacing="8">
-                <TextBlock Text="Subscriptions" FontWeight="SemiBold" />
-                <ListBox Grid.Row="1" ItemsSource="{Binding Subscriptions}">
-                  <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:SubscriptionRow">
-                      <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,5">
-                        <StackPanel><TextBlock Text="{Binding DisplayName}" /><TextBlock Text="{Binding SubscriptionId}" FontSize="10" Opacity="0.55" /></StackPanel>
-                        <TextBlock Grid.Column="1" Text="{Binding Selection}" VerticalAlignment="Center" Margin="12,0" />
-                        <Button Grid.Column="2" Content="Include / exclude" Command="{Binding $parent[Window].DataContext.ToggleSubscriptionCommand}" CommandParameter="{Binding}" />
-                      </Grid>
-                    </DataTemplate>
-                  </ListBox.ItemTemplate>
-                </ListBox>
-              </Grid>
-            </Border>
-          </Grid>
-        </Grid>
-      </TabItem>
+              <Border Classes="warning" IsVisible="{Binding PendingRemediation, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="Pending Azure write" FontSize="{StaticResource StageFontSize18}" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding PendingRemediation.Title}" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding PendingRemediation.Description}" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding PendingRemediation.TargetResourceId, StringFormat='Target  {0}'}" TextWrapping="Wrap" />
+                  <ItemsControl ItemsSource="{Binding PendingRemediation.SafeOperations}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding}" FontFamily="Consolas" TextWrapping="Wrap" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="primary" Content="Apply approved change" Command="{Binding ApplyArcRemediationCommand}" />
+                    <Button Content="Cancel" Command="{Binding CancelRemediationCommand}" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
 
-      <TabItem Header="Connection identities">
-        <Grid Margin="22" ColumnDefinitions="420,*" ColumnSpacing="18">
-          <StackPanel Spacing="14">
-            <StackPanel><TextBlock Text="Connection identities" FontSize="26" FontWeight="SemiBold" /><TextBlock Text="Domain and local accounts used inside target machines." Opacity="0.7" /></StackPanel>
-            <Border Classes="card">
-              <StackPanel Spacing="9">
-                <TextBlock Text="Create identity" FontWeight="SemiBold" />
-                <TextBox Text="{Binding NewConnectionName}" PlaceholderText="Friendly name, e.g. Corp production admin" />
-                <ComboBox ItemsSource="{Binding ConnectionIdentityKinds}" SelectedItem="{Binding NewConnectionKind}" />
-                <TextBox Text="{Binding NewConnectionUsername}" PlaceholderText="DOMAIN\username or .\username" />
-                <TextBox Text="{Binding NewConnectionPassword}" PasswordChar="●" PlaceholderText="Password (stored in Windows Credential Manager)" />
-                <TextBox Text="{Binding NewConnectionSshKeyPath}" PlaceholderText="SSH private key path (optional)" />
-                <Button Classes="primary" Content="Save connection identity" Command="{Binding SaveConnectionIdentityCommand}" />
-                <Button Content="Cancel edit" Command="{Binding CancelConnectionIdentityEditCommand}" />
+          <!-- Account picker. Shown only for an unpinned machine, and only ever a choice from the
+               stored list — credentials are never typed at connect time. -->
+          <Border IsVisible="{Binding IsAccountPickerOpen}" Background="#B325231F">
+            <Border Classes="panel" MaxWidth="520" VerticalAlignment="Center" HorizontalAlignment="Center">
+              <StackPanel Spacing="12">
+                <TextBlock Classes="screen-eyebrow" Text="LOCAL ACCOUNT" />
+                <TextBlock Text="{Binding PickerMachine.Name, StringFormat='Which local account for {0}?'}"
+                           FontSize="{StaticResource StageFontSize20}" TextWrapping="Wrap" />
+                <ComboBox HorizontalAlignment="Stretch" MinHeight="40"
+                          ItemsSource="{Binding LocalAccounts}" SelectedItem="{Binding PickerAccount}"
+                          AutomationProperties.Name="Local account to use" />
+                <CheckBox Content="Remember this for the machine" IsChecked="{Binding PickerRemember}" />
+                <TextBlock Text="Arc machines use this one account for both the SSH relay and the Remote Desktop sign-in."
+                           FontSize="{StaticResource StageFontSize11}" Opacity="0.75" TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Classes="primary" Content="Connect" Command="{Binding ConfirmAccountPickCommand}" />
+                  <Button Content="Cancel" Command="{Binding CancelAccountPickCommand}" />
+                </StackPanel>
               </StackPanel>
             </Border>
-            <Border Classes="card">
-              <StackPanel Spacing="9">
-                <TextBlock Text="Map selected identity" FontWeight="SemiBold" />
-                <TextBlock Text="Most-specific wins: machine, tag, domain, resource group, subscription, tenant." FontSize="11" TextWrapping="Wrap" Opacity="0.7" />
-                <ComboBox ItemsSource="{Binding MappingKinds}" SelectedItem="{Binding NewMappingKind}" />
-                <TextBox Text="{Binding NewMappingValue}" PlaceholderText="Match value (tag format: key=value)" />
-                <NumericUpDown Value="{Binding NewMappingPriority}" Minimum="-1000" Maximum="1000" FormatString="0" />
-                <CheckBox Content="Use as the Arc SSH relay identity" IsChecked="{Binding NewMappingIsRelay}" />
-                <Button Content="Save mapping" Command="{Binding SaveMappingCommand}" />
+          </Border>
+
+          <!-- Per-machine editor: pin an account up front so this machine never asks again. -->
+          <Border IsVisible="{Binding IsMachineEditorOpen}" Background="#B325231F">
+            <Border Classes="panel" MaxWidth="560" VerticalAlignment="Center" HorizontalAlignment="Center">
+              <StackPanel Spacing="12">
+                <TextBlock Classes="screen-eyebrow" Text="EDIT MACHINE" />
+                <TextBlock Text="{Binding EditorMachine.Name}" FontSize="{StaticResource StageFontSize20}" />
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="field-label" Text="Pinned local account" />
+                  <ComboBox HorizontalAlignment="Stretch" MinHeight="40"
+                            ItemsSource="{Binding LocalAccounts}" SelectedItem="{Binding EditorAccount}"
+                            AutomationProperties.Name="Pinned local account" />
+                  <TextBlock Text="Leave empty to be asked once at the next connection."
+                             FontSize="{StaticResource StageFontSize11}" Opacity="0.75" TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="field-label" Text="Route override" />
+                  <ComboBox HorizontalAlignment="Stretch" MinHeight="40"
+                            ItemsSource="{Binding EditorMachine.Paths}" SelectedItem="{Binding EditorRoute}"
+                            AutomationProperties.Name="Route override" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Classes="primary" Content="Save" Command="{Binding SaveMachineEditCommand}" />
+                  <Button Content="Cancel" Command="{Binding CancelMachineEditCommand}" />
+                </StackPanel>
               </StackPanel>
             </Border>
-          </StackPanel>
-          <Grid Grid.Column="1" RowDefinitions="*,Auto,*" RowSpacing="14">
-            <ListBox ItemsSource="{Binding ConnectionIdentities}" SelectedItem="{Binding SelectedConnectionIdentity}">
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:ConnectionIdentityRow">
-                  <Border Classes="card" Margin="0,0,0,10">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <StackPanel Spacing="3"><TextBlock Text="{Binding DisplayName}" FontSize="17" FontWeight="SemiBold" /><TextBlock Text="{Binding Username}" /><TextBlock Text="{Binding Kind}" Opacity="0.7" /><TextBlock Text="{Binding Credential}" FontSize="11" /></StackPanel>
-                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" VerticalAlignment="Top"><Button Content="Edit" Command="{Binding $parent[Window].DataContext.EditConnectionIdentityCommand}" CommandParameter="{Binding}" /><Button Content="Remove" Command="{Binding $parent[Window].DataContext.RemoveConnectionIdentityCommand}" CommandParameter="{Binding}" /></StackPanel>
-                    </Grid>
-                  </Border>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
-            <TextBlock Grid.Row="1" Text="Mappings" FontSize="18" FontWeight="SemiBold" />
-            <DataGrid Grid.Row="2" ItemsSource="{Binding ConnectionMappings}" AutoGenerateColumns="False" IsReadOnly="True">
-              <DataGrid.Columns>
-                <DataGridTextColumn Header="Identity" Binding="{Binding IdentityName}" Width="2*" />
-                <DataGridTextColumn Header="Purpose" Binding="{Binding Purpose}" Width="110" />
-                <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="120" />
-                <DataGridTextColumn Header="Match" Binding="{Binding Match}" Width="2*" />
-                <DataGridTextColumn Header="Priority" Binding="{Binding Priority}" Width="80" />
-                <DataGridTemplateColumn Header="" Width="90"><DataGridTemplateColumn.CellTemplate><DataTemplate x:DataType="vm:ConnectionMappingRow"><Button Content="Remove" Command="{Binding $parent[Window].DataContext.RemoveMappingCommand}" CommandParameter="{Binding}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-              </DataGrid.Columns>
-            </DataGrid>
-          </Grid>
+          </Border>
         </Grid>
       </TabItem>
 
-      <TabItem Header="Sessions">
-        <Grid Margin="22" RowDefinitions="Auto,*" RowSpacing="14">
-          <StackPanel><TextBlock Text="Sessions" FontSize="26" FontWeight="SemiBold" /><TextBlock Text="Managed RDP, SSH, Bastion, and Arc helpers." Opacity="0.7" /></StackPanel>
-          <DataGrid Grid.Row="1" ItemsSource="{Binding Sessions}" AutoGenerateColumns="False" IsReadOnly="True">
-            <DataGrid.Columns>
-              <DataGridTextColumn Header="Machine" Binding="{Binding Machine}" Width="2*" />
-              <DataGridTextColumn Header="Route" Binding="{Binding Route}" Width="180" />
-              <DataGridTextColumn Header="State" Binding="{Binding State}" Width="140" />
-              <DataGridTextColumn Header="Started" Binding="{Binding Started}" Width="180" />
-              <DataGridTemplateColumn Header="" Width="100"><DataGridTemplateColumn.CellTemplate><DataTemplate x:DataType="vm:SessionRow"><Button Content="Stop" Command="{Binding $parent[Window].DataContext.StopSessionCommand}" CommandParameter="{Binding}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-            </DataGrid.Columns>
-          </DataGrid>
-        </Grid>
-      </TabItem>
-
-      <TabItem Header="Settings">
+      <!-- ============================================================ CONNECT IDENTITIES (Entra) -->
+      <TabItem Header="◎  Connect identities">
         <ScrollViewer>
-          <StackPanel Margin="22" Spacing="16" MaxWidth="760" HorizontalAlignment="Left">
-            <StackPanel><TextBlock Text="Settings" FontSize="26" FontWeight="SemiBold" /><TextBlock Text="Appearance and background behavior for this Windows profile." Opacity="0.7" /></StackPanel>
-            <Border Classes="card"><Grid ColumnDefinitions="220,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12"><TextBlock Text="Theme" /><ComboBox Grid.Column="1" ItemsSource="{Binding Themes}" SelectedItem="{Binding SelectedTheme}" /><TextBlock Grid.Row="1" Text="Accent color" /><ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Accents}" SelectedItem="{Binding SelectedAccent}" /><TextBlock Grid.Row="2" Text="Close behavior" /><ComboBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding CloseBehaviors}" SelectedItem="{Binding SelectedCloseBehavior}" /><TextBlock Grid.Row="3" Text="Notification area" /><CheckBox Grid.Row="3" Grid.Column="1" Content="Hide when minimized" IsChecked="{Binding MinimizeToNotificationArea}" /><TextBlock Grid.Row="4" Text="Background" /><CheckBox Grid.Row="4" Grid.Column="1" Content="Refresh metadata in the background" IsChecked="{Binding BackgroundSyncEnabled}" /><TextBlock Grid.Row="5" Text="Refresh interval (minutes)" /><NumericUpDown Grid.Row="5" Grid.Column="1" Value="{Binding BackgroundSyncMinutes}" Minimum="5" Maximum="1440" FormatString="0" /></Grid></Border>
-            <Border Classes="card"><StackPanel Spacing="8"><TextBlock Text="Workstation readiness" FontWeight="SemiBold" /><TextBlock Text="{Binding WorkstationStatus}" TextWrapping="Wrap" /><Button Content="Install / update local CLI extensions" Command="{Binding PrepareWorkstationCommand}" HorizontalAlignment="Left" /></StackPanel></Border>
-            <Border Classes="card" IsVisible="{Binding PendingRemediation, Converter={x:Static conv:ObjectConverters.IsNotNull}}"><StackPanel Spacing="8"><TextBlock Text="Pending Azure write" FontSize="18" FontWeight="SemiBold" /><TextBlock Text="{Binding PendingRemediation.Title}" FontWeight="SemiBold" /><TextBlock Text="{Binding PendingRemediation.Description}" TextWrapping="Wrap" /><TextBlock Text="Creates/updates only: Microsoft.Azure.OpenSSH / WindowsOpenSSH" TextWrapping="Wrap" /><StackPanel Orientation="Horizontal" Spacing="8"><Button Classes="primary" Content="Apply approved change" Command="{Binding ApplyArcRemediationCommand}" /><Button Content="Cancel" Command="{Binding CancelRemediationCommand}" /></StackPanel></StackPanel></Border>
+          <StackPanel Margin="30,24,30,20" Spacing="14">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="screen-eyebrow" Text="MICROSOFT ENTRA" />
+              <TextBlock Classes="screen-title" Text="Connect identities" />
+              <TextBlock Classes="screen-description"
+                         Text="Each Entra account gets its own isolated, Windows-encrypted Azure CLI session. Your default Azure CLI profile is never touched." />
+            </StackPanel>
+
+            <Grid ColumnDefinitions="380,*" ColumnSpacing="18">
+              <StackPanel Spacing="14">
+                <Border Classes="panel">
+                  <StackPanel Spacing="10">
+                    <TextBlock Classes="section-title" Text="Add an account" />
+                    <TextBox Text="{Binding NewIdentityName}" PlaceholderText="Friendly name (optional)" />
+                    <Button Classes="primary" Content="Use my Windows account"
+                            Command="{Binding AddWindowsAccountCommand}" HorizontalAlignment="Stretch" />
+                    <Button Content="Use a device code instead"
+                            Command="{Binding AddDeviceCodeAccountCommand}" HorizontalAlignment="Stretch" />
+                    <TextBlock Text="Conditional Access and MFA prompts still belong to Microsoft. Stagecoach never suppresses them."
+                               FontSize="{StaticResource StageFontSize11}" Opacity="0.75" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+
+                <ListBox ItemsSource="{Binding Identities}" SelectedItem="{Binding SelectedIdentity}"
+                         Background="Transparent" BorderThickness="0"
+                         AutomationProperties.Name="Connected Entra accounts">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:IdentityRow">
+                      <Border Classes="card" Margin="0,0,0,8">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <StackPanel>
+                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding AccountName}" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding State}" FontSize="{StaticResource StageFontSize11}" />
+                          </StackPanel>
+                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+                            <Button Content="Reauth"
+                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ReauthenticateCommand}"
+                                    CommandParameter="{Binding}" />
+                            <Button Content="Remove"
+                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RemoveIdentityCommand}"
+                                    CommandParameter="{Binding}" />
+                          </StackPanel>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </StackPanel>
+
+              <StackPanel Grid.Column="1" Spacing="14">
+                <Border Classes="panel">
+                  <StackPanel Spacing="10">
+                    <TextBlock Classes="section-title" Text="Scan scope and rescan" />
+                    <TextBlock TextWrapping="Wrap" Opacity="0.75"
+                               Text="Refresh available scope finds newly granted tenants and subscriptions. Rescan machines re-reads the estate inside the scope you already included." />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Content="↻  Refresh available scope" Command="{Binding RefreshIdentityScopeCommand}" />
+                      <Button Classes="primary" Content="⌕  Rescan machines" Command="{Binding RescanIdentityCommand}" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="panel">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="section-title" Text="Tenants" />
+                    <ListBox ItemsSource="{Binding Tenants}" MaxHeight="200" Background="Transparent" BorderThickness="0"
+                             AutomationProperties.Name="Discovered tenants">
+                      <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:TenantRow">
+                          <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,5" ColumnSpacing="10">
+                            <StackPanel>
+                              <TextBlock Text="{Binding DisplayName}" />
+                              <TextBlock Text="{Binding TenantId}" FontSize="10" Opacity="0.55" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding Selection}" VerticalAlignment="Center" />
+                            <Button Grid.Column="2" Content="Include / exclude"
+                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ToggleTenantCommand}"
+                                    CommandParameter="{Binding}" />
+                          </Grid>
+                        </DataTemplate>
+                      </ListBox.ItemTemplate>
+                    </ListBox>
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="panel">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="section-title" Text="Subscriptions" />
+                    <ListBox ItemsSource="{Binding Subscriptions}" MaxHeight="240" Background="Transparent" BorderThickness="0"
+                             AutomationProperties.Name="Discovered subscriptions">
+                      <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SubscriptionRow">
+                          <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,5" ColumnSpacing="10">
+                            <StackPanel>
+                              <TextBlock Text="{Binding DisplayName}" />
+                              <TextBlock Text="{Binding SubscriptionId}" FontSize="10" Opacity="0.55" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding Selection}" VerticalAlignment="Center" />
+                            <Button Grid.Column="2" Content="Include / exclude"
+                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ToggleSubscriptionCommand}"
+                                    CommandParameter="{Binding}" />
+                          </Grid>
+                        </DataTemplate>
+                      </ListBox.ItemTemplate>
+                    </ListBox>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ============================================================ LOCAL ACCOUNTS -->
+      <TabItem Header="◉  Local accounts">
+        <ScrollViewer>
+          <StackPanel Margin="30,24,30,20" Spacing="14">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="screen-eyebrow" Text="IN-GUEST SIGN-IN" />
+              <TextBlock Classes="screen-title" Text="Local accounts" />
+              <TextBlock Classes="screen-description"
+                         Text="The accounts used inside the machines themselves. Use DOMAIN\username for a domain account, or just username for a local one. Passwords live in Windows Credential Manager and never in the Stagecoach database, logs, or command lines." />
+            </StackPanel>
+
+            <Grid ColumnDefinitions="400,*" ColumnSpacing="18">
+              <Border Classes="panel">
+                <StackPanel Spacing="10">
+                  <TextBlock Classes="section-title" Text="Add or edit an account" />
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="field-label" Text="Display name" />
+                    <TextBox Text="{Binding NewAccountName}" PlaceholderText="e.g. Prod local admin" />
+                  </StackPanel>
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="field-label" Text="Username" />
+                    <TextBox Text="{Binding NewAccountUsername}" PlaceholderText="DOMAIN\username  or  username" />
+                  </StackPanel>
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="field-label" Text="Password" />
+                    <TextBox Text="{Binding NewAccountPassword}" PasswordChar="●"
+                             PlaceholderText="Stored in Windows Credential Manager" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="primary" Content="Save account" Command="{Binding SaveLocalAccountCommand}" />
+                    <Button Content="Cancel edit" Command="{Binding CancelLocalAccountEditCommand}" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+
+              <StackPanel Grid.Column="1" Spacing="10">
+                <Border Classes="info" IsVisible="{Binding !HasLocalAccounts}">
+                  <TextBlock TextWrapping="Wrap"
+                             Text="No local accounts yet. Add one here, then pin it to machines with Edit on the Machines screen so connecting never asks." />
+                </Border>
+                <ListBox ItemsSource="{Binding LocalAccounts}" Background="Transparent" BorderThickness="0"
+                         AutomationProperties.Name="Stored local accounts">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:LocalAccountRow">
+                      <Border Classes="card" Margin="0,0,0,10">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <StackPanel Spacing="3">
+                            <TextBlock Text="{Binding DisplayName}" FontSize="{StaticResource StageFontSize18}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Username}" FontFamily="Consolas" />
+                            <TextBlock Text="{Binding Kind}" Opacity="0.7" />
+                            <TextBlock Text="{Binding Credential}" FontSize="{StaticResource StageFontSize11}" />
+                          </StackPanel>
+                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+                            <Button Content="Edit"
+                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).EditLocalAccountCommand}"
+                                    CommandParameter="{Binding}" />
+                            <Button Content="Remove"
+                                    Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RemoveLocalAccountCommand}"
+                                    CommandParameter="{Binding}" />
+                          </StackPanel>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ============================================================ SESSIONS -->
+      <TabItem Header="⌁  Sessions">
+        <ScrollViewer>
+          <StackPanel Margin="30,24,30,20" Spacing="14">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="screen-eyebrow" Text="RUNNING NOW" />
+              <TextBlock Classes="screen-title" Text="Sessions" />
+              <TextBlock Classes="screen-description"
+                         Text="Managed Remote Desktop, SSH, Bastion, and Arc helper processes. Closing a client reaps its helper and returns its local port." />
+            </StackPanel>
+            <Border Classes="panel" Padding="0">
+              <Grid RowDefinitions="Auto,*" MinWidth="700">
+                <Grid Grid.Row="0" ColumnDefinitions="2*,160,140,170,100" Margin="8,8,8,6"
+                      Background="{DynamicResource StageColorSurfaceAlt}">
+                  <TextBlock Classes="column-header" Text="MACHINE" Margin="6,8" />
+                  <TextBlock Grid.Column="1" Classes="column-header" Text="ROUTE" Margin="6,8" />
+                  <TextBlock Grid.Column="2" Classes="column-header" Text="STATE" Margin="6,8" />
+                  <TextBlock Grid.Column="3" Classes="column-header" Text="STARTED" Margin="6,8" />
+                  <TextBlock Grid.Column="4" Classes="column-header" Text="" Margin="6,8" />
+                </Grid>
+                <ListBox Grid.Row="1" Classes="estate-list" ItemsSource="{Binding Sessions}" MinHeight="140"
+                         AutomationProperties.Name="Active sessions">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SessionRow">
+                      <Grid ColumnDefinitions="2*,160,140,170,100" Margin="6,8">
+                        <StackPanel Margin="6,0">
+                          <TextBlock Text="{Binding Machine}" FontWeight="SemiBold" />
+                          <TextBlock Text="{Binding Detail}" FontSize="{StaticResource StageFontSize11}" Opacity="0.7" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Text="{Binding Route}" VerticalAlignment="Center" Margin="6,0" />
+                        <TextBlock Grid.Column="2" Text="{Binding State}" VerticalAlignment="Center" Margin="6,0" />
+                        <TextBlock Grid.Column="3" Text="{Binding Started}" VerticalAlignment="Center" Margin="6,0" />
+                        <Button Grid.Column="4" Content="Stop" Margin="6,0"
+                                Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).StopSessionCommand}"
+                                CommandParameter="{Binding}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </Grid>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ============================================================ SETTINGS -->
+      <TabItem Header="⚙  Settings">
+        <ScrollViewer>
+          <StackPanel Margin="30,24,30,20" Spacing="14" MaxWidth="820" HorizontalAlignment="Left">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="screen-eyebrow" Text="THIS WINDOWS PROFILE" />
+              <TextBlock Classes="screen-title" Text="Settings" />
+              <TextBlock Classes="screen-description"
+                         Text="Appearance, background behaviour, workstation prerequisites, and updates." />
+            </StackPanel>
+
+            <Border Classes="panel">
+              <Grid ColumnDefinitions="230,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12" ColumnSpacing="12">
+                <TextBlock Text="Theme" VerticalAlignment="Center" />
+                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding Themes}" SelectedItem="{Binding SelectedTheme}" />
+                <TextBlock Grid.Row="1" Text="Accent color" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding Accents}" SelectedItem="{Binding SelectedAccent}" />
+                <TextBlock Grid.Row="2" Text="Close behavior" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding CloseBehaviors}" SelectedItem="{Binding SelectedCloseBehavior}" />
+                <TextBlock Grid.Row="3" Text="Notification area" VerticalAlignment="Center" />
+                <CheckBox Grid.Row="3" Grid.Column="1" IsChecked="{Binding MinimizeToNotificationArea}"
+                          Content="Keep running in the notification area when minimized" />
+                <TextBlock Grid.Row="4" Text="Background refresh" VerticalAlignment="Center" />
+                <CheckBox Grid.Row="4" Grid.Column="1" IsChecked="{Binding BackgroundSyncEnabled}"
+                          Content="Refresh estate metadata in the background" />
+                <TextBlock Grid.Row="5" Text="Refresh interval (minutes)" VerticalAlignment="Center" />
+                <NumericUpDown Grid.Row="5" Grid.Column="1" HorizontalAlignment="Left" MinWidth="160"
+                               Value="{Binding BackgroundSyncMinutes}" Minimum="5" Maximum="1440" FormatString="0" />
+              </Grid>
+            </Border>
+
+            <Border Classes="panel">
+              <StackPanel Spacing="10">
+                <TextBlock Classes="section-title" Text="Software updates" />
+                <TextBlock Text="{Binding CurrentVersion, StringFormat='Installed version  {0}'}" Opacity="0.75" />
+                <TextBlock Text="{Binding UpdateStatus}" TextWrapping="Wrap" />
+                <Border Classes="info" IsVisible="{Binding AvailableUpdate, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding AvailableUpdate.ReleaseName}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding AvailableUpdate.ReleaseNotes}" TextWrapping="Wrap" MaxHeight="180" />
+                  </StackPanel>
+                </Border>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Content="Check for updates" Command="{Binding CheckForUpdateCommand}" />
+                  <Button Content="Download and verify" Command="{Binding DownloadUpdateCommand}" />
+                  <Button Classes="primary" Content="Install update"
+                          Command="{Binding InstallUpdateCommand}" IsEnabled="{Binding IsUpdateReadyToInstall}" />
+                </StackPanel>
+                <TextBlock Text="Updates are only accepted from the signed Stagecoach release repository and are SHA-256 verified before Windows Installer runs."
+                           FontSize="{StaticResource StageFontSize11}" Opacity="0.7" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="panel">
+              <StackPanel Spacing="8">
+                <TextBlock Classes="section-title" Text="Workstation readiness" />
+                <TextBlock Text="{Binding WorkstationStatus}" TextWrapping="Wrap" />
+                <Button Content="Install or update local Azure CLI extensions"
+                        Command="{Binding PrepareWorkstationCommand}" HorizontalAlignment="Left" />
+              </StackPanel>
+            </Border>
+
             <Button Classes="primary" Content="Save settings" Command="{Binding SaveSettingsCommand}" HorizontalAlignment="Left" />
           </StackPanel>
         </ScrollViewer>
       </TabItem>
     </TabControl>
 
-    <Border Grid.Row="2" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Padding="18,9">
-      <Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding StatusMessage}" /><ProgressBar Grid.Column="1" Width="160" IsIndeterminate="{Binding IsBusy}" IsVisible="{Binding IsBusy}" /></Grid>
+    <Border Grid.Row="3" Background="{DynamicResource StageColorSurfaceAlt}"
+            BorderThickness="0,1,0,0" BorderBrush="{DynamicResource StageColorLine}" Padding="18,9">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+        <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold"
+                   Text="{Binding ActiveSessionCount, StringFormat='{}{0} active'}" />
+        <ProgressBar Grid.Column="2" Width="160" IsIndeterminate="{Binding IsBusy}" IsVisible="{Binding IsBusy}" />
+      </Grid>
     </Border>
   </Grid>
 </Window>

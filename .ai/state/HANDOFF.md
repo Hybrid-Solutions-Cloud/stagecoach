@@ -1,63 +1,84 @@
 # Handoff
 
-## Session 2026-08-30 — native Windows redesign delivered
+## Session 2026-09-02 — interface rebuilt around the operator workflow
 
 ### Branch
 
-`feature/native-windows-redesign`
+`main`, from `7b615f4`.
 
-Pull request: <https://github.com/Hybrid-Solutions-Cloud/stagecoach/pull/1>
+### Why
 
-### Azure DevOps
+The delivered application built cleanly but did not match the accepted design's UX section or the
+way the operator actually works. Audit findings that drove this session: no landing behaviour on
+the estate, no details panel, search-only filtering with none of the required filters, the
+remediation preview parked in Settings, and a mapping rule engine standing between the operator and
+a connection. The window also had a 1080x680 minimum, which cannot fit a laptop display or a
+windowed RDP session.
 
-- Closed Epic AB#7937
-- Closed Features AB#7938, AB#7939, AB#7940, and AB#7941
+### Delivered
 
-### Outcome
-
-Replaced the abandoned PowerShell/Pode/browser path and incomplete WPF/.NET 9 scaffold with the accepted Vault Prospector-style native Windows product. The app is Avalonia on .NET 10 and has a single clean estate view plus dedicated identity, connection-identity, session, and settings surfaces.
-
-### Implemented
-
-- Per-Entra-account isolated Azure CLI profiles with WAM or device-code login
-- Deterministic duplicate prevention, reauthentication, removal, tenant/subscription inventory, and opt-in scope
-- Azure Resource Graph discovery/correlation for Azure VM, NIC/IP/VNet/peering/Bastion, Arc, and Azure Local
-- Multi-identity machine de-duplication with stale-path pruning
-- Direct RDP/SSH, Bastion tunnel/native RDP/SSH, and Arc RDP/SSH orchestration
-- SQLCipher metadata with DPAPI-protected key
-- Windows Credential Manager connection profiles; temporary session-persistent RDP credentials; SSH AskPass helper
-- Mapping by tenant, subscription, resource group, domain, tag, or machine, with separate Arc relay mappings
-- Per-machine route override, search, favorites, recents/sessions, background sync, notification-area lifecycle
-- System/light/dark themes plus Rust/Blue/Green/Purple accent schemes
-- Two-step WindowsOpenSSH Arc remediation preview/approval; no silent Azure writes
-- Workstation readiness and explicit Azure CLI extension preparation
-- Self-contained ZIP/checksum and WiX MSI packaging
-- Rewritten README, quickstart, architecture, connection, credential, release, roadmap, ADR, and plan documentation
-- Removed 465 previously committed build artifacts and all superseded product code
+- **Machines is the landing screen.** The application opens on the machine list. An operator with
+  no account connected gets an inline pointer to Connect identities instead of a wizard.
+- **Real filtering.** Tenant, subscription, source (Azure / Arc / Azure Local), OS, and state
+  dropdowns, plus Favorites / Ready only / Pinned toggles, a search box, and Reset. Tenant and
+  subscription are now columns as well as filters.
+- **Pinned local accounts.** `Edit` on a machine pins a stored account, so that machine connects on
+  the first click. Unpinned machines ask once, from a list, and remember. Credentials are never
+  typed at connect time. New `MachinePins` table with cascade delete from `ConnectionIdentities`.
+- **One account for both Arc hops.** `MainViewModel.LaunchAsync` passes the same account as target
+  and relay, so an Arc RDP session never prompts for a local administrator account twice. This
+  supersedes design section 2.3; ADR-005 records the decision.
+- **Local accounts** replace the mapping-rule builder. Account type is inferred from the username
+  format rather than a dropdown.
+- **Session-aware lifecycle.** New `WindowLifecyclePolicy` holds the decisions as pure statics.
+  The tray shows a live session count, Exit requires confirmation while sessions run, and closing
+  the window never tears down live sessions regardless of the close behaviour setting.
+- **In-app updates.** `GitHubReleaseUpdateService` ported from Vault Prospector with every control
+  intact: publisher check, mandatory Sigstore bundle, withdrawn-release kill switch, trusted URI
+  prefixes, streamed incremental hashing against the authenticated digest, contained update
+  directory, reparse-point rejection, and a second hash immediately before launch. ADR-006.
+- **Shell rebuilt on the Prospector pattern.** Full design-token set, `TabControl.product-shell`
+  left navigation, header band with an active-account context strip, an accessible error banner,
+  and a status bar. The machine list is an aligned `ListBox` rather than a `DataGrid`.
+- **Laptop and RDP fitness.** Minimum window size 320x300, compact density, flat opaque surfaces
+  with no corner radius, and every screen inside a scroll viewer.
+- Documentation rewritten to match, including new interface, updates, download, and scripts pages,
+  ADR-005 and ADR-006, and an amendment note on ADR-002. Six dead ADR navigation entries left over
+  from the superseded PowerShell design were removed.
 
 ### Verification
 
-- `pwsh ./scripts/Build.ps1 -Configuration Release`: success; zero warnings/errors
-- `dotnet test Stagecoach.sln -c Release`: 12 passed, 0 failed
-- `dotnet format Stagecoach.sln --verify-no-changes --no-restore`: success
-- `dotnet list Stagecoach.sln package --vulnerable --include-transitive`: no known vulnerable packages
-- `git diff --check`: success
-- `npm ci` and `npm run docs:build`: success after correcting the accepted-design link for VitePress
-- Self-contained published executable: launched with a responsive `Stagecoach` main window
-- MSI: silent install, installed-app launch/readiness check, and silent uninstall all passed
-- ZIP SHA-256 sidecar matches the generated archive
-- Secret-pattern scan returned no committed credential material
+| Check | Result |
+|---|---|
+| `dotnet build Stagecoach.sln -c Release` | Succeeded, 0 warnings, 0 errors |
+| `dotnet test Stagecoach.sln -c Release` | 39 passed, 0 failed (was 12) |
+| `dotnet format --verify-no-changes --no-restore` | Clean |
+| `dotnet list package --vulnerable --include-transitive` | None across all five projects |
+| `git diff --check` | Clean |
+| `npm run docs:build` | Build complete, no dead links |
+| Application launch | Window titled `Stagecoach`, responsive, no exceptions |
+| `scripts/Package.ps1 -Version 0.1.0 -Installer` | ZIP, SHA-256 sidecar, and MSI produced |
 
-### Artifacts
+### Gotcha worth remembering
 
-- `artifacts/Stagecoach-0.1.0-win-x64.zip`
-- `artifacts/Stagecoach-0.1.0-win-x64.zip.sha256`
-- `installer/bin/Release/Stagecoach-0.1.0-win-x64.msi`
+Packaging failed with `Access to the path 'Avalonia.Base.dll' is denied` because a stale
+`Stagecoach.App.exe` from a previous session was still running out of `artifacts/publish-win-x64`.
+Stop any running instance before packaging.
 
-### Remaining external validation
+### Not done
 
-Live Entra sign-in, subscription discovery, Bastion, Arc, Azure Local, target credential, Conditional Access, and WindowsOpenSSH deployment paths require representative authorized Azure resources and were intentionally not simulated or mutated during local release validation. The app and docs state the required access and interaction boundaries.
+- **No live Azure validation.** Entra sign-in, subscription discovery, Bastion correlation, Arc and
+  Azure Local routes, credential staging, Conditional Access behaviour, and OpenSSH deployment all
+  require representative authorized resources. A green build is not evidence for any of them, and
+  no work item should be closed on it.
+- **No GitHub release exists yet**, so the download page's `releases/latest` links will 404 until
+  one is published.
+- The in-app updater requires the release pipeline to publish the MSI, its `.sha256` sidecar, and a
+  `.sigstore.json` bundle under the publishing app identity. Until then, update checks correctly
+  report that no trusted release was found. Do not relax the checks to work around this.
 
-### Repository note
+### Next
 
-The native redesign is committed with the AB#7937 reference and pushed to the feature branch. PR #1's initial documentation check exposed a VitePress dead link; the link was corrected and the complete Release build, tests, ZIP, checksum, and MSI were regenerated successfully before merge.
+1. Publish the 0.1.0 release with the MSI, ZIP, and checksums.
+2. Stand up the `stagecoach-releases` publishing pipeline including Sigstore bundles.
+3. Run the live validation matrix in `pmo/plans/stagecoach-implementation-plan.md`.

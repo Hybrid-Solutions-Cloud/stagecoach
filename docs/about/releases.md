@@ -1,5 +1,17 @@
-# Releases
+# Release notes
 
-Stagecoach has not yet published a supported production release. The current native-Windows implementation is packaged as version `0.1.0` for administrator validation.
+Every release is published on the
+[GitHub releases page](https://github.com/Hybrid-Solutions-Cloud/stagecoach/releases) with the MSI,
+a self-contained ZIP, and a SHA-256 sidecar.
 
-Release artifacts contain a self-contained `win-x64` ZIP, SHA-256 checksum, and per-machine MSI. Local encrypted state under `%LOCALAPPDATA%\Stagecoach` is intentionally not removed during an application upgrade or uninstall.
+Stagecoach can also update itself — **Settings → Software updates**. See
+[Updating Stagecoach](../guide/updates.md) for what is verified before an installer is allowed to
+run.
+
+## 0.1.0
+
+First native Windows release. See the [changelog](./changelog.md).
+
+Live Azure-dependent paths — Entra sign-in, subscription discovery, Bastion, Arc, Azure Local,
+target credentials, Conditional Access, and OpenSSH deployment — require representative authorized
+Azure resources and are not proven by a local build.

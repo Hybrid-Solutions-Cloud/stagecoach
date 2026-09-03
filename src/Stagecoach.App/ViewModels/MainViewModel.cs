@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Stagecoach.Core;
-using Stagecoach.Infrastructure.Orchestration;
 
 namespace Stagecoach.App.ViewModels;
 
@@ -15,9 +14,13 @@ public partial class MainViewModel : ObservableObject
     private readonly IConnectionService _connections;
     private readonly IWorkstationReadinessService _readiness;
     private readonly IArcRemediationService _arcRemediation;
+    private readonly IReleaseUpdateService _updates;
     private readonly AppSettingsStore _settingsStore;
     private readonly List<MachineRecord> _allMachines = [];
-    private readonly List<ConnectionIdentityMapping> _mappings = [];
+    private readonly Dictionary<string, Guid> _pins = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _tenantNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _subscriptionNames = new(StringComparer.OrdinalIgnoreCase);
+    private VerifiedReleaseUpdate? _verifiedUpdate;
 
     public MainViewModel(
         IMetadataStore store,
@@ -27,6 +30,7 @@ public partial class MainViewModel : ObservableObject
         IConnectionService connections,
         IWorkstationReadinessService readiness,
         IArcRemediationService arcRemediation,
+        IReleaseUpdateService updates,
         AppSettingsStore settingsStore)
     {
         _store = store;
@@ -36,46 +40,65 @@ public partial class MainViewModel : ObservableObject
         _connections = connections;
         _readiness = readiness;
         _arcRemediation = arcRemediation;
+        _updates = updates;
         _settingsStore = settingsStore;
-        foreach (var kind in Enum.GetValues<ConnectionIdentityKind>()) ConnectionIdentityKinds.Add(kind);
         foreach (var theme in Enum.GetValues<AppTheme>()) Themes.Add(theme);
         foreach (var accent in Enum.GetValues<AppAccent>()) Accents.Add(accent);
         foreach (var behavior in Enum.GetValues<CloseBehavior>()) CloseBehaviors.Add(behavior);
-        foreach (var kind in Enum.GetValues<MappingScopeKind>()) MappingKinds.Add(kind);
+        ResetFilterOptions();
     }
 
     public ObservableCollection<IdentityRow> Identities { get; } = [];
     public ObservableCollection<TenantRow> Tenants { get; } = [];
     public ObservableCollection<SubscriptionRow> Subscriptions { get; } = [];
     public ObservableCollection<MachineRow> Machines { get; } = [];
-    public ObservableCollection<ConnectionIdentityRow> ConnectionIdentities { get; } = [];
+    public ObservableCollection<LocalAccountRow> LocalAccounts { get; } = [];
     public ObservableCollection<SessionRow> Sessions { get; } = [];
-    public ObservableCollection<ConnectionIdentityKind> ConnectionIdentityKinds { get; } = [];
     public ObservableCollection<AppTheme> Themes { get; } = [];
     public ObservableCollection<AppAccent> Accents { get; } = [];
     public ObservableCollection<CloseBehavior> CloseBehaviors { get; } = [];
-    public ObservableCollection<MappingScopeKind> MappingKinds { get; } = [];
-    public ObservableCollection<ConnectionMappingRow> ConnectionMappings { get; } = [];
+    public ObservableCollection<FilterOption> TenantFilters { get; } = [];
+    public ObservableCollection<FilterOption> SubscriptionFilters { get; } = [];
+    public ObservableCollection<FilterOption> SourceFilters { get; } = [];
+    public ObservableCollection<FilterOption> OperatingSystemFilters { get; } = [];
+    public ObservableCollection<FilterOption> StateFilters { get; } = [];
 
     [ObservableProperty] private int _selectedTabIndex;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string _statusMessage = "Starting";
     [ObservableProperty] private string _workstationStatus = "Checking workstation";
+    [ObservableProperty] private string _errorTitle = string.Empty;
+    [ObservableProperty] private string _errorMessage = string.Empty;
+    [ObservableProperty] private bool _hasActionableError;
     [ObservableProperty] private string _searchText = string.Empty;
     [ObservableProperty] private IdentityRow? _selectedIdentity;
     [ObservableProperty] private MachineRow? _selectedMachine;
     [ObservableProperty] private string _newIdentityName = string.Empty;
-    [ObservableProperty] private string _newConnectionName = string.Empty;
-    [ObservableProperty] private string _newConnectionUsername = string.Empty;
-    [ObservableProperty] private string _newConnectionPassword = string.Empty;
-    [ObservableProperty] private string _newConnectionSshKeyPath = string.Empty;
-    [ObservableProperty] private ConnectionIdentityKind _newConnectionKind = ConnectionIdentityKind.ActiveDirectory;
-    [ObservableProperty] private Guid? _editingConnectionIdentityId;
-    [ObservableProperty] private MappingScopeKind _newMappingKind = MappingScopeKind.Domain;
-    [ObservableProperty] private string _newMappingValue = string.Empty;
-    [ObservableProperty] private int _newMappingPriority;
-    [ObservableProperty] private bool _newMappingIsRelay;
-    [ObservableProperty] private ConnectionIdentityRow? _selectedConnectionIdentity;
+
+    [ObservableProperty] private FilterOption? _selectedTenantFilter;
+    [ObservableProperty] private FilterOption? _selectedSubscriptionFilter;
+    [ObservableProperty] private FilterOption? _selectedSourceFilter;
+    [ObservableProperty] private FilterOption? _selectedOperatingSystemFilter;
+    [ObservableProperty] private FilterOption? _selectedStateFilter;
+    [ObservableProperty] private bool _favoritesOnly;
+    [ObservableProperty] private bool _readyOnly;
+    [ObservableProperty] private bool _pinnedOnly;
+
+    [ObservableProperty] private string _newAccountName = string.Empty;
+    [ObservableProperty] private string _newAccountUsername = string.Empty;
+    [ObservableProperty] private string _newAccountPassword = string.Empty;
+    [ObservableProperty] private Guid? _editingAccountId;
+
+    [ObservableProperty] private bool _isAccountPickerOpen;
+    [ObservableProperty] private MachineRow? _pickerMachine;
+    [ObservableProperty] private LocalAccountRow? _pickerAccount;
+    [ObservableProperty] private bool _pickerRemember = true;
+
+    [ObservableProperty] private bool _isMachineEditorOpen;
+    [ObservableProperty] private MachineRow? _editorMachine;
+    [ObservableProperty] private LocalAccountRow? _editorAccount;
+    [ObservableProperty] private AccessPathRow? _editorRoute;
+
     [ObservableProperty] private AppTheme _selectedTheme = AppTheme.System;
     [ObservableProperty] private AppAccent _selectedAccent = AppAccent.Rust;
     [ObservableProperty] private CloseBehavior _selectedCloseBehavior = CloseBehavior.NotificationArea;
@@ -85,11 +108,28 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _startMinimized;
     [ObservableProperty] private RemediationAction? _pendingRemediation;
 
+    [ObservableProperty] private string _currentVersion = "0.0.0";
+    [ObservableProperty] private string _updateStatus = "Updates have not been checked.";
+    [ObservableProperty] private ReleaseUpdateInfo? _availableUpdate;
+    [ObservableProperty] private bool _isUpdateReadyToInstall;
+
     public bool HasIdentities => Identities.Count > 0;
     public bool HasMachines => Machines.Count > 0;
+    public bool HasLocalAccounts => LocalAccounts.Count > 0;
+    public int ActiveSessionCount => Sessions.Count(row =>
+        row.Session.State is SessionState.Starting or SessionState.Active or SessionState.InteractionRequired);
+    public string EstateSummary => _allMachines.Count == Machines.Count
+        ? $"{Machines.Count} machines"
+        : $"{Machines.Count} of {_allMachines.Count} machines";
+    public string ActiveIdentityContext => SelectedIdentity is null
+        ? "No Entra account connected"
+        : $"{SelectedIdentity.DisplayName} · {SelectedIdentity.AccountName}";
 
     public async Task InitializeAsync()
     {
+        CurrentVersion = typeof(MainViewModel).Assembly.GetName().Version is { } version
+            ? $"{version.Major}.{version.Minor}.{version.Build}"
+            : "0.0.0";
         await RunBusyAsync("Opening encrypted local estate", async () =>
         {
             await _store.InitializeAsync();
@@ -106,14 +146,22 @@ public partial class MainViewModel : ObservableObject
             WorkstationStatus = readiness.CanDiscover
                 ? readiness.Actions.Count == 0 ? "Workstation ready" : string.Join("  •  ", readiness.Actions)
                 : "Azure CLI is required before Stagecoach can discover machines.";
+
             await ReloadIdentitiesAsync();
+            await ReloadLocalAccountsAsync();
             await ReloadMachinesAsync();
-            await ReloadConnectionIdentitiesAsync();
             await ReloadSessionsAsync();
-            SelectedTabIndex = Identities.Count == 0 ? 1 : 0;
-            StatusMessage = Identities.Count == 0 ? "Add your first Entra identity" : $"{Machines.Count} machines cached";
+
+            // The machine list is always the landing screen. An operator with no identity yet is
+            // told what to do rather than being dropped into a settings surface.
+            SelectedTabIndex = 0;
+            StatusMessage = Identities.Count == 0
+                ? "Add an Entra account under Connect identities to discover machines."
+                : $"{Machines.Count} machines cached";
         });
     }
+
+    // ---------------------------------------------------------------- Entra identities
 
     [RelayCommand]
     private Task AddWindowsAccountAsync() => AddIdentityAsync(useDeviceCode: false);
@@ -129,7 +177,7 @@ public partial class MainViewModel : ObservableObject
             NewIdentityName = string.Empty;
             await ReloadIdentitiesAsync();
             SelectedIdentity = Identities.FirstOrDefault(item => item.Profile.Id == identity.Id);
-            StatusMessage = $"{identity.DisplayName} connected. Select tenants and subscriptions.";
+            StatusMessage = $"{identity.DisplayName} connected. Choose the tenants and subscriptions to scan.";
         });
     }
 
@@ -156,16 +204,37 @@ public partial class MainViewModel : ObservableObject
         });
     }
 
+    /// <summary>
+    /// Re-enumerates tenants and subscriptions so newly granted scope becomes visible. New scope
+    /// is never scanned until the operator includes it.
+    /// </summary>
     [RelayCommand]
     private async Task RefreshIdentityScopeAsync()
     {
-        if (SelectedIdentity is null) return;
-        await RunBusyAsync($"Refreshing scope for {SelectedIdentity.DisplayName}", async () =>
+        if (SelectedIdentity is null) { StatusMessage = "Select an Entra account first."; return; }
+        var identity = SelectedIdentity;
+        await RunBusyAsync($"Refreshing available scope for {identity.DisplayName}", async () =>
         {
-            var inventory = await _identityService.RefreshInventoryAsync(SelectedIdentity.Profile);
+            var inventory = await _identityService.RefreshInventoryAsync(identity.Profile);
             await _store.UpsertIdentityInventoryAsync(inventory);
-            await LoadScopeAsync(SelectedIdentity.Profile.Id);
-            StatusMessage = "New scope is disabled until you explicitly enable it.";
+            await LoadScopeAsync(identity.Profile.Id);
+            StatusMessage = "New tenants and subscriptions stay excluded until you include them.";
+        });
+    }
+
+    /// <summary>Rescans machines inside the scope already included for one identity.</summary>
+    [RelayCommand]
+    private async Task RescanIdentityAsync()
+    {
+        if (SelectedIdentity is null) { StatusMessage = "Select an Entra account first."; return; }
+        var identity = SelectedIdentity;
+        await RunBusyAsync($"Rescanning machines for {identity.DisplayName}", async () =>
+        {
+            var subscriptions = await _store.GetSubscriptionsAsync(identity.Profile.Id);
+            var result = await _discovery.DiscoverAsync(identity.Profile, subscriptions);
+            await _store.UpsertDiscoveryAsync(result);
+            await ReloadMachinesAsync();
+            StatusMessage = $"{identity.DisplayName} rescanned — {Machines.Count} machines";
         });
     }
 
@@ -188,7 +257,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task SyncEstateAsync()
     {
-        await RunBusyAsync("Scanning selected Azure estates", async () =>
+        await RunBusyAsync("Scanning included Azure scope", async () =>
         {
             var failures = new List<string>();
             foreach (var row in Identities.Where(item => item.Profile.IsEnabled))
@@ -201,15 +270,26 @@ public partial class MainViewModel : ObservableObject
                 }
                 catch (Exception)
                 {
+                    // One identity's failure never blocks the rest of the estate.
                     failures.Add(row.DisplayName);
                 }
             }
+
             await ReloadMachinesAsync();
-            StatusMessage = failures.Count == 0
-                ? $"Sync complete — {Machines.Count} machines"
-                : $"Sync completed with isolated errors for: {string.Join(", ", failures)}";
+            if (failures.Count == 0)
+            {
+                StatusMessage = $"Sync complete — {Machines.Count} machines";
+            }
+            else
+            {
+                StatusMessage = $"Sync completed with isolated errors for: {string.Join(", ", failures)}";
+                RaiseError("Some accounts could not be scanned",
+                    $"These accounts need attention: {string.Join(", ", failures)}. Reauthenticate them under Connect identities, then rescan.");
+            }
         });
     }
+
+    // ---------------------------------------------------------------- Machines
 
     [RelayCommand]
     private async Task ToggleFavoriteAsync(MachineRow? row)
@@ -220,29 +300,247 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void ResetFilters()
+    {
+        SearchText = string.Empty;
+        FavoritesOnly = false;
+        ReadyOnly = false;
+        PinnedOnly = false;
+        SelectedTenantFilter = TenantFilters.FirstOrDefault();
+        SelectedSubscriptionFilter = SubscriptionFilters.FirstOrDefault();
+        SelectedSourceFilter = SourceFilters.FirstOrDefault();
+        SelectedOperatingSystemFilter = OperatingSystemFilters.FirstOrDefault();
+        SelectedStateFilter = StateFilters.FirstOrDefault();
+        ApplyMachineFilter();
+    }
+
+    /// <summary>Opens the per-machine editor, where a local account can be pinned ahead of time.</summary>
+    [RelayCommand]
+    private void EditMachine(MachineRow? row)
+    {
+        if (row is null) return;
+        EditorMachine = row;
+        EditorAccount = row.PinnedAccountId is { } pinned
+            ? LocalAccounts.FirstOrDefault(item => item.Profile.Id == pinned)
+            : null;
+        EditorRoute = row.SelectedRoute;
+        IsMachineEditorOpen = true;
+        StatusMessage = LocalAccounts.Count == 0
+            ? "Add a local account first — Local accounts in the left navigation."
+            : $"Pin the local account Stagecoach should always use for {row.Name}.";
+    }
+
+    [RelayCommand]
+    private async Task SaveMachineEditAsync()
+    {
+        if (EditorMachine is not { } row) return;
+        var accountId = EditorAccount?.Profile.Id;
+        await _store.SetMachinePinAsync(row.Machine.ResourceId, accountId);
+        if (EditorRoute is not null) row.SelectedRoute = EditorRoute;
+        IsMachineEditorOpen = false;
+        await ReloadMachinesAsync();
+        StatusMessage = accountId is null
+            ? $"{row.Name} will ask which local account to use."
+            : $"{EditorAccount!.DisplayName} pinned to {row.Name}. It will not ask again.";
+    }
+
+    [RelayCommand]
+    private void CancelMachineEdit()
+    {
+        IsMachineEditorOpen = false;
+        EditorMachine = null;
+        EditorAccount = null;
+    }
+
+    /// <summary>
+    /// One click from the estate list. A pinned machine connects immediately; an unpinned one asks
+    /// which stored local account to use, and remembers the answer.
+    /// </summary>
+    [RelayCommand]
     private async Task ConnectAsync(MachineRow? row)
     {
         if (row is null) return;
-        var path = row.SelectedPath;
-        if (path is null) { StatusMessage = "No connection route is available."; return; }
-        var azureIdentity = Identities.Select(item => item.Profile).FirstOrDefault(item => item.Id == path.IdentityId);
-        if (azureIdentity is null) { StatusMessage = "The Azure identity for this route is unavailable."; return; }
-        var profiles = ConnectionIdentities.Select(item => item.Profile).ToArray();
-        var target = ConnectionIdentityMatcher.Select(row.Machine, path, profiles, _mappings, relayIdentity: false);
-        var relay = ConnectionIdentityMatcher.Select(row.Machine, path, profiles, _mappings, relayIdentity: true);
-        var needsTarget = path.Route is ConnectionRouteKind.DirectRdp or ConnectionRouteKind.BastionTunnelRdp or ConnectionRouteKind.ArcRdp;
-        if (needsTarget && target is null)
+        if (row.SelectedPath is not { } path)
         {
-            SelectedTabIndex = 2;
-            StatusMessage = "Create and map a connection identity for this machine or domain first.";
+            RaiseError("No route is available", $"{row.Name} has no usable connection route from any connected account.");
             return;
         }
+
+        if (!RouteNeedsLocalAccount(path.Route))
+        {
+            await LaunchAsync(row, path, account: null);
+            return;
+        }
+
+        if (row.PinnedAccountId is { } pinnedId &&
+            LocalAccounts.FirstOrDefault(item => item.Profile.Id == pinnedId) is { } pinned)
+        {
+            await LaunchAsync(row, path, pinned);
+            return;
+        }
+
+        if (LocalAccounts.Count == 0)
+        {
+            SelectedTabIndex = 2;
+            RaiseError("No local account is stored",
+                "Add the machine's local administrator account under Local accounts, then connect again.");
+            return;
+        }
+
+        PickerMachine = row;
+        PickerAccount = LocalAccounts.FirstOrDefault();
+        PickerRemember = true;
+        IsAccountPickerOpen = true;
+    }
+
+    [RelayCommand]
+    private async Task ConfirmAccountPickAsync()
+    {
+        if (PickerMachine is not { } row || PickerAccount is not { } account) return;
+        IsAccountPickerOpen = false;
+        if (PickerRemember)
+        {
+            await _store.SetMachinePinAsync(row.Machine.ResourceId, account.Profile.Id);
+            _pins[row.Machine.StableKey] = account.Profile.Id;
+            row.ApplyPin(account.Profile.Id, account.DisplayName);
+        }
+
+        if (row.SelectedPath is { } path) await LaunchAsync(row, path, account);
+    }
+
+    [RelayCommand]
+    private void CancelAccountPick()
+    {
+        IsAccountPickerOpen = false;
+        PickerMachine = null;
+        StatusMessage = "Connection cancelled.";
+    }
+
+    /// <summary>
+    /// Arc RDP relays SSH then RDP. Both hops use the same stored local account, so the operator is
+    /// never asked to enter a local administrator account for Arc.
+    /// </summary>
+    private async Task LaunchAsync(MachineRow row, AzureAccessPath path, LocalAccountRow? account)
+    {
+        var azureIdentity = Identities
+            .Select(item => item.Profile)
+            .FirstOrDefault(item => item.Id == path.IdentityId);
+        if (azureIdentity is null)
+        {
+            RaiseError("That Entra account is unavailable",
+                $"The account that discovered {row.Name} is no longer connected. Reconnect it under Connect identities.");
+            return;
+        }
+
         await RunBusyAsync($"Connecting to {row.Name}", async () =>
         {
-            await _connections.ConnectAsync(row.Machine, path, azureIdentity, target, relay);
+            await _connections.ConnectAsync(row.Machine, path, azureIdentity, account?.Profile, account?.Profile);
             await ReloadSessionsAsync();
-            StatusMessage = $"Connection started for {row.Name}";
+            StatusMessage = $"{row.Name} — {DescribeRoute(path.Route)} started";
         });
+    }
+
+    private static bool RouteNeedsLocalAccount(ConnectionRouteKind route) =>
+        route is ConnectionRouteKind.DirectRdp
+            or ConnectionRouteKind.BastionTunnelRdp
+            or ConnectionRouteKind.ArcRdp
+            or ConnectionRouteKind.ArcSsh
+            or ConnectionRouteKind.DirectSsh;
+
+    // ---------------------------------------------------------------- Local accounts
+
+    [RelayCommand]
+    private async Task SaveLocalAccountAsync()
+    {
+        if (string.IsNullOrWhiteSpace(NewAccountName) || string.IsNullOrWhiteSpace(NewAccountUsername))
+        {
+            StatusMessage = "A display name and username are required.";
+            return;
+        }
+
+        await RunBusyAsync("Saving local account", async () =>
+        {
+            var id = EditingAccountId ?? Guid.NewGuid();
+            var hasPassword = !string.IsNullOrEmpty(NewAccountPassword);
+            var existing = LocalAccounts.Select(item => item.Profile).FirstOrDefault(item => item.Id == id);
+            var username = NewAccountUsername.Trim();
+            var profile = new ConnectionIdentityProfile(
+                id,
+                NewAccountName.Trim(),
+                username.Contains('\\') || username.Contains('@')
+                    ? ConnectionIdentityKind.ActiveDirectory
+                    : ConnectionIdentityKind.LocalAccount,
+                username,
+                hasPassword ? _credentialStore.GetTargetName(id) : existing?.CredentialTarget,
+                existing?.SshPrivateKeyPath);
+            await _store.UpsertConnectionIdentityAsync(profile);
+            if (hasPassword)
+            {
+                await _credentialStore.SaveAsync(id, profile.Username, NewAccountPassword);
+            }
+            else if (existing?.CredentialTarget is not null &&
+                     await _credentialStore.ReadAsync(id) is { } saved &&
+                     !string.Equals(saved.Username, profile.Username, StringComparison.Ordinal))
+            {
+                await _credentialStore.SaveAsync(id, profile.Username, saved.Password);
+            }
+
+            NewAccountPassword = string.Empty;
+            NewAccountName = string.Empty;
+            NewAccountUsername = string.Empty;
+            EditingAccountId = null;
+            await ReloadLocalAccountsAsync();
+            await ReloadMachinesAsync();
+            StatusMessage = hasPassword
+                ? $"{profile.DisplayName} saved. The password is in Windows Credential Manager."
+                : $"{profile.DisplayName} saved.";
+        });
+    }
+
+    [RelayCommand]
+    private void EditLocalAccount(LocalAccountRow? row)
+    {
+        if (row is null) return;
+        EditingAccountId = row.Profile.Id;
+        NewAccountName = row.Profile.DisplayName;
+        NewAccountUsername = row.Profile.Username;
+        NewAccountPassword = string.Empty;
+        StatusMessage = "Leave the password blank to keep the stored password.";
+    }
+
+    [RelayCommand]
+    private void CancelLocalAccountEdit()
+    {
+        EditingAccountId = null;
+        NewAccountName = NewAccountUsername = NewAccountPassword = string.Empty;
+        StatusMessage = "Edit cancelled.";
+    }
+
+    [RelayCommand]
+    private async Task RemoveLocalAccountAsync(LocalAccountRow? row)
+    {
+        if (row is null) return;
+        var pinnedTo = _pins.Count(pair => pair.Value == row.Profile.Id);
+        await RunBusyAsync($"Removing {row.DisplayName}", async () =>
+        {
+            await _credentialStore.DeleteAsync(row.Profile.Id);
+            await _store.RemoveConnectionIdentityAsync(row.Profile.Id);
+            await ReloadLocalAccountsAsync();
+            await ReloadMachinesAsync();
+            StatusMessage = pinnedTo == 0
+                ? $"{row.DisplayName} removed."
+                : $"{row.DisplayName} removed. {pinnedTo} machine(s) will ask which account to use.";
+        });
+    }
+
+    // ---------------------------------------------------------------- Sessions, readiness, updates
+
+    [RelayCommand]
+    private async Task StopSessionAsync(SessionRow? row)
+    {
+        if (row is null) return;
+        await _connections.StopAsync(row.Session.Id);
+        await ReloadSessionsAsync();
     }
 
     [RelayCommand]
@@ -253,13 +551,17 @@ public partial class MainViewModel : ObservableObject
             StatusMessage = "Select a Windows Arc or Azure Local machine first.";
             return;
         }
+
         try
         {
             PendingRemediation = _arcRemediation.PreviewOpenSshInstallation(row.Machine, path);
             SelectedMachine = row;
-            StatusMessage = "Review the Azure write below, then choose Apply only if you approve it.";
+            StatusMessage = "Review the Azure write below, then apply only if you approve it.";
         }
-        catch (InvalidOperationException exception) { StatusMessage = exception.Message; }
+        catch (InvalidOperationException exception)
+        {
+            StatusMessage = exception.Message;
+        }
     }
 
     [RelayCommand]
@@ -269,11 +571,12 @@ public partial class MainViewModel : ObservableObject
         var identity = Identities.Select(item => item.Profile).FirstOrDefault(item => item.Id == path.IdentityId);
         if (identity is null) { StatusMessage = "The Azure identity for this remediation is unavailable."; return; }
         var action = PendingRemediation;
-        await RunBusyAsync($"Preparing {SelectedMachine.Name}", async () =>
+        var machine = SelectedMachine.Machine;
+        await RunBusyAsync($"Preparing {machine.Name}", async () =>
         {
-            await _arcRemediation.ApplyOpenSshInstallationAsync(action, SelectedMachine.Machine, path, identity);
+            await _arcRemediation.ApplyOpenSshInstallationAsync(action, machine, path, identity);
             PendingRemediation = null;
-            StatusMessage = "WindowsOpenSSH deployment submitted. Sync the estate after Azure reports completion.";
+            StatusMessage = "WindowsOpenSSH deployment submitted. Rescan once Azure reports completion.";
         });
     }
 
@@ -297,108 +600,89 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task SaveConnectionIdentityAsync()
+    private async Task CheckForUpdateAsync()
     {
-        if (string.IsNullOrWhiteSpace(NewConnectionName) || string.IsNullOrWhiteSpace(NewConnectionUsername))
+        await RunBusyAsync("Checking for a new Stagecoach release", async () =>
         {
-            StatusMessage = "Connection identity name and username are required.";
-            return;
-        }
-        await RunBusyAsync("Saving connection identity", async () =>
-        {
-            var id = EditingConnectionIdentityId ?? Guid.NewGuid();
-            var hasPassword = !string.IsNullOrEmpty(NewConnectionPassword);
-            var existing = ConnectionIdentities.Select(item => item.Profile).FirstOrDefault(item => item.Id == id);
-            var profile = new ConnectionIdentityProfile(id, NewConnectionName.Trim(), NewConnectionKind,
-                NewConnectionUsername.Trim(), hasPassword ? _credentialStore.GetTargetName(id) : existing?.CredentialTarget,
-                string.IsNullOrWhiteSpace(NewConnectionSshKeyPath) ? null : NewConnectionSshKeyPath.Trim());
-            await _store.UpsertConnectionIdentityAsync(profile);
-            if (hasPassword) await _credentialStore.SaveAsync(id, profile.Username, NewConnectionPassword);
-            else if (existing?.CredentialTarget is not null && await _credentialStore.ReadAsync(id) is { } saved &&
-                     !string.Equals(saved.Username, profile.Username, StringComparison.Ordinal))
-                await _credentialStore.SaveAsync(id, profile.Username, saved.Password);
-            NewConnectionPassword = string.Empty;
-            NewConnectionName = string.Empty;
-            NewConnectionUsername = string.Empty;
-            NewConnectionSshKeyPath = string.Empty;
-            EditingConnectionIdentityId = null;
-            await ReloadConnectionIdentitiesAsync();
-            SelectedConnectionIdentity = ConnectionIdentities.FirstOrDefault(item => item.Profile.Id == id);
-            StatusMessage = hasPassword ? "Connection identity saved in Windows Credential Manager." : "Connection identity metadata saved.";
+            IsUpdateReadyToInstall = false;
+            _verifiedUpdate = null;
+            var release = await _updates.CheckAsync();
+            AvailableUpdate = release;
+            UpdateStatus = release.Availability switch
+            {
+                ReleaseUpdateAvailability.Available =>
+                    $"Stagecoach {release.LatestVersion} is available. You are on {release.CurrentVersion}.",
+                ReleaseUpdateAvailability.Current =>
+                    $"Stagecoach {release.CurrentVersion} is the current release.",
+                ReleaseUpdateAvailability.DevelopmentBuild =>
+                    "This is a development build, so it will not update itself.",
+                _ => "Update state is unknown.",
+            };
+            StatusMessage = UpdateStatus;
         });
     }
 
     [RelayCommand]
-    private void EditConnectionIdentity(ConnectionIdentityRow? row)
+    private async Task DownloadUpdateAsync()
     {
-        if (row is null) return;
-        EditingConnectionIdentityId = row.Profile.Id;
-        NewConnectionName = row.Profile.DisplayName;
-        NewConnectionKind = row.Profile.Kind;
-        NewConnectionUsername = row.Profile.Username;
-        NewConnectionSshKeyPath = row.Profile.SshPrivateKeyPath ?? string.Empty;
-        NewConnectionPassword = string.Empty;
-        StatusMessage = "Editing connection identity. Leave password blank to keep the stored password.";
+        if (AvailableUpdate is not { Availability: ReleaseUpdateAvailability.Available } release)
+        {
+            StatusMessage = "Check for updates first.";
+            return;
+        }
+
+        await RunBusyAsync($"Downloading Stagecoach {release.LatestVersion}", async () =>
+        {
+            _verifiedUpdate = await _updates.DownloadAndVerifyAsync(release);
+            IsUpdateReadyToInstall = true;
+            UpdateStatus = $"Stagecoach {release.LatestVersion} downloaded and SHA-256 verified.";
+            StatusMessage = UpdateStatus;
+        });
     }
 
     [RelayCommand]
-    private void CancelConnectionIdentityEdit()
+    private async Task InstallUpdateAsync()
     {
-        EditingConnectionIdentityId = null;
-        NewConnectionName = NewConnectionUsername = NewConnectionPassword = NewConnectionSshKeyPath = string.Empty;
-        StatusMessage = "Edit cancelled.";
-    }
-
-    [RelayCommand]
-    private async Task SaveMappingAsync()
-    {
-        if (SelectedConnectionIdentity is null || string.IsNullOrWhiteSpace(NewMappingValue)) return;
-        var mapping = new ConnectionIdentityMapping(Guid.NewGuid(), SelectedConnectionIdentity.Profile.Id,
-            NewMappingKind, NewMappingValue.Trim(), NewMappingPriority, NewMappingIsRelay);
-        await _store.UpsertConnectionMappingAsync(mapping);
-        _mappings.Add(mapping);
-        NewMappingValue = string.Empty;
-        await ReloadMappingsAsync();
-        StatusMessage = "Connection identity mapping saved.";
-    }
-
-    [RelayCommand]
-    private async Task RemoveMappingAsync(ConnectionMappingRow? row)
-    {
-        if (row is null) return;
-        await _store.RemoveConnectionMappingAsync(row.Mapping.Id);
-        await ReloadMappingsAsync();
-        StatusMessage = "Connection identity mapping removed.";
-    }
-
-    [RelayCommand]
-    private async Task RemoveConnectionIdentityAsync(ConnectionIdentityRow? row)
-    {
-        if (row is null) return;
-        await _credentialStore.DeleteAsync(row.Profile.Id);
-        await _store.RemoveConnectionIdentityAsync(row.Profile.Id);
-        await ReloadConnectionIdentitiesAsync();
-    }
-
-    [RelayCommand]
-    private async Task StopSessionAsync(SessionRow? row)
-    {
-        if (row is null) return;
-        await _connections.StopAsync(row.Session.Id);
-        await ReloadSessionsAsync();
+        if (_verifiedUpdate is not { } update) { StatusMessage = "Download the update first."; return; }
+        await RunBusyAsync("Starting Windows Installer", async () =>
+        {
+            await _updates.LaunchAsync(update);
+            UpdateStatus = "Windows Installer is running. Stagecoach restarts after the upgrade.";
+            StatusMessage = UpdateStatus;
+        });
     }
 
     [RelayCommand]
     private async Task SaveSettingsAsync()
     {
-        await _settingsStore.SaveAsync(new AppSettings(SelectedTheme, SelectedAccent, MinimizeToNotificationArea,
-            SelectedCloseBehavior, BackgroundSyncEnabled, Math.Clamp(BackgroundSyncMinutes, 5, 1440), StartMinimized));
+        await _settingsStore.SaveAsync(new AppSettings(
+            SelectedTheme, SelectedAccent, MinimizeToNotificationArea, SelectedCloseBehavior,
+            BackgroundSyncEnabled, Math.Clamp(BackgroundSyncMinutes, 5, 1440), StartMinimized));
         StatusMessage = "Settings saved.";
     }
 
+    [RelayCommand]
+    private void DismissError()
+    {
+        HasActionableError = false;
+        ErrorTitle = ErrorMessage = string.Empty;
+    }
+
+    // ---------------------------------------------------------------- Reload and filtering
+
     partial void OnSearchTextChanged(string value) => ApplyMachineFilter();
+    partial void OnFavoritesOnlyChanged(bool value) => ApplyMachineFilter();
+    partial void OnReadyOnlyChanged(bool value) => ApplyMachineFilter();
+    partial void OnPinnedOnlyChanged(bool value) => ApplyMachineFilter();
+    partial void OnSelectedTenantFilterChanged(FilterOption? value) => ApplyMachineFilter();
+    partial void OnSelectedSubscriptionFilterChanged(FilterOption? value) => ApplyMachineFilter();
+    partial void OnSelectedSourceFilterChanged(FilterOption? value) => ApplyMachineFilter();
+    partial void OnSelectedOperatingSystemFilterChanged(FilterOption? value) => ApplyMachineFilter();
+    partial void OnSelectedStateFilterChanged(FilterOption? value) => ApplyMachineFilter();
+
     partial void OnSelectedIdentityChanged(IdentityRow? value)
     {
+        OnPropertyChanged(nameof(ActiveIdentityContext));
         if (value is not null) _ = LoadScopeAsync(value.Profile.Id);
     }
 
@@ -408,7 +692,19 @@ public partial class MainViewModel : ObservableObject
         Identities.Clear();
         foreach (var identity in await _store.GetIdentitiesAsync()) Identities.Add(new IdentityRow(identity));
         SelectedIdentity = Identities.FirstOrDefault(item => item.Profile.Id == selectedId) ?? Identities.FirstOrDefault();
+
+        _tenantNames.Clear();
+        _subscriptionNames.Clear();
+        foreach (var identity in Identities)
+        {
+            foreach (var tenant in await _store.GetTenantsAsync(identity.Profile.Id))
+                _tenantNames[tenant.TenantId] = tenant.DisplayName;
+            foreach (var subscription in await _store.GetSubscriptionsAsync(identity.Profile.Id))
+                _subscriptionNames[subscription.SubscriptionId] = subscription.DisplayName;
+        }
+
         OnPropertyChanged(nameof(HasIdentities));
+        OnPropertyChanged(nameof(ActiveIdentityContext));
     }
 
     private async Task LoadScopeAsync(Guid identityId)
@@ -423,46 +719,165 @@ public partial class MainViewModel : ObservableObject
     {
         _allMachines.Clear();
         _allMachines.AddRange(await _store.GetMachinesAsync());
+        _pins.Clear();
+        foreach (var pair in await _store.GetMachinePinsAsync()) _pins[pair.Key] = pair.Value;
+        RebuildFilterOptions();
         ApplyMachineFilter();
         OnPropertyChanged(nameof(HasMachines));
     }
 
+    private void ResetFilterOptions()
+    {
+        TenantFilters.Clear();
+        TenantFilters.Add(FilterOption.All("All tenants"));
+        SubscriptionFilters.Clear();
+        SubscriptionFilters.Add(FilterOption.All("All subscriptions"));
+        SourceFilters.Clear();
+        SourceFilters.Add(FilterOption.All("All sources"));
+        OperatingSystemFilters.Clear();
+        OperatingSystemFilters.Add(FilterOption.All("Any OS"));
+        StateFilters.Clear();
+        StateFilters.Add(FilterOption.All("Any state"));
+        SelectedTenantFilter = TenantFilters[0];
+        SelectedSubscriptionFilter = SubscriptionFilters[0];
+        SelectedSourceFilter = SourceFilters[0];
+        SelectedOperatingSystemFilter = OperatingSystemFilters[0];
+        SelectedStateFilter = StateFilters[0];
+    }
+
+    private void RebuildFilterOptions()
+    {
+        var tenant = SelectedTenantFilter?.Value;
+        var subscription = SelectedSubscriptionFilter?.Value;
+        var source = SelectedSourceFilter?.Value;
+        var operatingSystem = SelectedOperatingSystemFilter?.Value;
+        var state = SelectedStateFilter?.Value;
+
+        Fill(TenantFilters, "All tenants", _allMachines
+            .SelectMany(machine => machine.AccessPaths.Select(path => path.TenantId))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(id => new FilterOption(TenantLabel(id), id)));
+        Fill(SubscriptionFilters, "All subscriptions", _allMachines
+            .SelectMany(machine => machine.AccessPaths.Select(path => path.SubscriptionId))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(id => new FilterOption(SubscriptionLabel(id), id)));
+        Fill(SourceFilters, "All sources", _allMachines
+            .Select(machine => MachineRow.DescribeSource(machine.Kind))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(value => new FilterOption(value, value)));
+        Fill(OperatingSystemFilters, "Any OS", _allMachines
+            .Select(machine => machine.OperatingSystem.ToString())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(value => new FilterOption(value, value)));
+        Fill(StateFilters, "Any state", _allMachines
+            .Select(MachineRow.DescribeState)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(value => new FilterOption(value, value)));
+
+        SelectedTenantFilter = Restore(TenantFilters, tenant);
+        SelectedSubscriptionFilter = Restore(SubscriptionFilters, subscription);
+        SelectedSourceFilter = Restore(SourceFilters, source);
+        SelectedOperatingSystemFilter = Restore(OperatingSystemFilters, operatingSystem);
+        SelectedStateFilter = Restore(StateFilters, state);
+
+        static void Fill(ObservableCollection<FilterOption> target, string allLabel, IEnumerable<FilterOption> options)
+        {
+            target.Clear();
+            target.Add(FilterOption.All(allLabel));
+            foreach (var option in options.OrderBy(item => item.Label, StringComparer.CurrentCultureIgnoreCase))
+                target.Add(option);
+        }
+
+        static FilterOption Restore(ObservableCollection<FilterOption> source, string? value) =>
+            source.FirstOrDefault(item => string.Equals(item.Value, value, StringComparison.OrdinalIgnoreCase))
+            ?? source[0];
+    }
+
+    private string TenantLabel(string tenantId) =>
+        _tenantNames.TryGetValue(tenantId, out var name) && !string.IsNullOrWhiteSpace(name)
+            ? name
+            : tenantId;
+
+    private string SubscriptionLabel(string subscriptionId) =>
+        _subscriptionNames.TryGetValue(subscriptionId, out var name) && !string.IsNullOrWhiteSpace(name)
+            ? name
+            : subscriptionId;
+
     private void ApplyMachineFilter()
     {
         var query = SearchText.Trim();
-        var filtered = _allMachines.Where(machine => string.IsNullOrWhiteSpace(query) ||
-            machine.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-            machine.ResourceGroup.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-            (machine.DomainName?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-            machine.AccessPaths.Any(path => path.SubscriptionId.Contains(query, StringComparison.OrdinalIgnoreCase)));
+        var tenant = SelectedTenantFilter?.Value;
+        var subscription = SelectedSubscriptionFilter?.Value;
+        var source = SelectedSourceFilter?.Value;
+        var operatingSystem = SelectedOperatingSystemFilter?.Value;
+        var state = SelectedStateFilter?.Value;
+
+        var filtered = _allMachines.Where(machine =>
+            (string.IsNullOrWhiteSpace(query) ||
+             machine.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+             machine.ResourceGroup.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+             (machine.DomainName?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+             machine.AccessPaths.Any(path =>
+                 SubscriptionLabel(path.SubscriptionId).Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                 TenantLabel(path.TenantId).Contains(query, StringComparison.OrdinalIgnoreCase))) &&
+            (tenant is null || machine.AccessPaths.Any(path =>
+                string.Equals(path.TenantId, tenant, StringComparison.OrdinalIgnoreCase))) &&
+            (subscription is null || machine.AccessPaths.Any(path =>
+                string.Equals(path.SubscriptionId, subscription, StringComparison.OrdinalIgnoreCase))) &&
+            (source is null || string.Equals(MachineRow.DescribeSource(machine.Kind), source, StringComparison.OrdinalIgnoreCase)) &&
+            (operatingSystem is null || string.Equals(machine.OperatingSystem.ToString(), operatingSystem, StringComparison.OrdinalIgnoreCase)) &&
+            (state is null || string.Equals(MachineRow.DescribeState(machine), state, StringComparison.OrdinalIgnoreCase)) &&
+            (!FavoritesOnly || machine.IsFavorite) &&
+            (!ReadyOnly || machine.BestReadiness == ReadinessState.Ready) &&
+            (!PinnedOnly || _pins.ContainsKey(machine.StableKey)));
+
+        var accountNames = LocalAccounts.ToDictionary(item => item.Profile.Id, item => item.DisplayName);
         Machines.Clear();
-        foreach (var machine in filtered.OrderByDescending(item => item.IsFavorite).ThenBy(item => item.Name))
-            Machines.Add(new MachineRow(machine));
+        foreach (var machine in filtered
+                     .OrderByDescending(item => item.IsFavorite)
+                     .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            Guid? pinnedId = _pins.TryGetValue(machine.StableKey, out var value) ? value : null;
+            var pinnedName = pinnedId is { } id ? accountNames.GetValueOrDefault(id) : null;
+            Machines.Add(new MachineRow(machine, TenantLabel, SubscriptionLabel, pinnedId, pinnedName));
+        }
+
+        OnPropertyChanged(nameof(HasMachines));
+        OnPropertyChanged(nameof(EstateSummary));
     }
 
-    private async Task ReloadConnectionIdentitiesAsync()
+    private async Task ReloadLocalAccountsAsync()
     {
-        ConnectionIdentities.Clear();
-        foreach (var profile in await _store.GetConnectionIdentitiesAsync()) ConnectionIdentities.Add(new ConnectionIdentityRow(profile));
-        _mappings.Clear();
-        _mappings.AddRange(await _store.GetConnectionMappingsAsync());
-        await ReloadMappingsAsync();
-    }
-
-    private async Task ReloadMappingsAsync()
-    {
-        _mappings.Clear();
-        _mappings.AddRange(await _store.GetConnectionMappingsAsync());
-        var profiles = ConnectionIdentities.ToDictionary(item => item.Profile.Id, item => item.DisplayName);
-        ConnectionMappings.Clear();
-        foreach (var mapping in _mappings)
-            ConnectionMappings.Add(new ConnectionMappingRow(mapping, profiles.GetValueOrDefault(mapping.ConnectionIdentityId, "Missing identity")));
+        LocalAccounts.Clear();
+        foreach (var profile in await _store.GetConnectionIdentitiesAsync())
+            LocalAccounts.Add(new LocalAccountRow(profile));
+        OnPropertyChanged(nameof(HasLocalAccounts));
     }
 
     private async Task ReloadSessionsAsync()
     {
         Sessions.Clear();
         foreach (var session in await _connections.GetSessionsAsync()) Sessions.Add(new SessionRow(session));
+        OnPropertyChanged(nameof(ActiveSessionCount));
+    }
+
+    private static string DescribeRoute(ConnectionRouteKind route) => route switch
+    {
+        ConnectionRouteKind.DirectRdp => "direct RDP",
+        ConnectionRouteKind.DirectSsh => "direct SSH",
+        ConnectionRouteKind.BastionRdp => "Bastion RDP",
+        ConnectionRouteKind.BastionTunnelRdp => "Bastion tunnel RDP",
+        ConnectionRouteKind.BastionSsh => "Bastion SSH",
+        ConnectionRouteKind.ArcRdp => "Arc RDP",
+        _ => "Arc SSH",
+    };
+
+    private void RaiseError(string title, string message)
+    {
+        ErrorTitle = title;
+        ErrorMessage = message;
+        HasActionableError = true;
     }
 
     private async Task RunBusyAsync(string message, Func<Task> operation)
@@ -470,17 +885,35 @@ public partial class MainViewModel : ObservableObject
         if (IsBusy) return;
         IsBusy = true;
         StatusMessage = message;
-        try { await operation(); }
-        catch (Exception exception) { StatusMessage = SafeMessage(exception); }
-        finally { IsBusy = false; }
+        try
+        {
+            await operation();
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = SafeMessage(exception);
+            RaiseError("That did not complete", StatusMessage);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     private static string SafeMessage(Exception exception) => exception switch
     {
         OperationCanceledException => "Operation cancelled.",
         InvalidOperationException => exception.Message,
+        InvalidDataException => exception.Message,
+        HttpRequestException => "Stagecoach could not reach the release service.",
         _ => "Stagecoach encountered an unexpected local error. Review diagnostics and retry.",
     };
+}
+
+public sealed record FilterOption(string Label, string? Value)
+{
+    public static FilterOption All(string label) => new(label, null);
+    public override string ToString() => Label;
 }
 
 public sealed record IdentityRow(AzureIdentityProfile Profile)
@@ -509,31 +942,90 @@ public sealed record SubscriptionRow(SubscriptionScope Scope)
 
 public partial class MachineRow : ObservableObject
 {
-    public MachineRow(MachineRecord machine)
+    public MachineRow(
+        MachineRecord machine,
+        Func<string, string> tenantLabel,
+        Func<string, string> subscriptionLabel,
+        Guid? pinnedAccountId,
+        string? pinnedAccountName)
     {
         Machine = machine;
         Paths = machine.AccessPaths.Select(path => new AccessPathRow(path)).ToArray();
         SelectedRoute = Paths.FirstOrDefault(item => item.Path.IsPreferred) ?? Paths.FirstOrDefault();
+        var preferred = machine.AccessPaths.FirstOrDefault(path => path.IsPreferred) ?? machine.AccessPaths.FirstOrDefault();
+        Tenant = preferred is null ? "—" : tenantLabel(preferred.TenantId);
+        Subscription = preferred is null ? "—" : subscriptionLabel(preferred.SubscriptionId);
+        PinnedAccountId = pinnedAccountId;
+        PinnedAccountName = pinnedAccountName;
     }
+
     public MachineRecord Machine { get; }
     public IReadOnlyList<AccessPathRow> Paths { get; }
+    public string Tenant { get; }
+    public string Subscription { get; }
+    public Guid? PinnedAccountId { get; private set; }
+    public string? PinnedAccountName { get; private set; }
+
     [ObservableProperty] private AccessPathRow? _selectedRoute;
+
     public AzureAccessPath? SelectedPath => SelectedRoute?.Path;
+
     partial void OnSelectedRouteChanged(AccessPathRow? value)
     {
         OnPropertyChanged(nameof(SelectedPath));
         OnPropertyChanged(nameof(Route));
         OnPropertyChanged(nameof(Readiness));
     }
+
+    public void ApplyPin(Guid accountId, string accountName)
+    {
+        PinnedAccountId = accountId;
+        PinnedAccountName = accountName;
+        OnPropertyChanged(nameof(PinnedAccountId));
+        OnPropertyChanged(nameof(PinnedAccountName));
+        OnPropertyChanged(nameof(Account));
+    }
+
     public string Name => Machine.Name;
-    public string Kind => Machine.Kind switch { MachineKind.AzureVm => "Azure VM", MachineKind.ArcServer => "Azure Arc", _ => "Azure Local" };
+    public string Source => DescribeSource(Machine.Kind);
     public string OperatingSystem => Machine.OperatingSystem.ToString();
-    public string Environment => Machine.DomainName ?? "Unmapped";
-    public string State => string.IsNullOrWhiteSpace(Machine.AgentState) ? Machine.PowerState : Machine.AgentState;
-    public string Identity => Machine.AccessPaths.Select(item => item.IdentityId.ToString("N")[..8]).FirstOrDefault() ?? "None";
-    public string Route => SelectedPath?.Route.ToString() ?? "None";
-    public string Readiness => SelectedPath?.Readiness.ToString() ?? Machine.BestReadiness.ToString();
+    public string State => DescribeState(Machine);
+    public string Route => SelectedPath is null ? "None" : DescribeRouteShort(SelectedPath.Route);
+    public string Readiness => (SelectedPath?.Readiness ?? Machine.BestReadiness) switch
+    {
+        ReadinessState.Ready => "Ready",
+        ReadinessState.InteractionRequired => "Sign-in",
+        ReadinessState.MissingPrerequisite => "Prereq",
+        ReadinessState.Offline => "Offline",
+        ReadinessState.PermissionDenied => "Denied",
+        ReadinessState.Unsupported => "Unsupported",
+        _ => "Unknown",
+    };
+    public string Account => PinnedAccountName ?? "Ask";
     public string Favorite => Machine.IsFavorite ? "★" : "☆";
+    public string ReasonText => SelectedPath?.Reason ?? "No route was correlated for this machine.";
+    public bool IsReady => (SelectedPath?.Readiness ?? Machine.BestReadiness) == ReadinessState.Ready;
+
+    public static string DescribeSource(MachineKind kind) => kind switch
+    {
+        MachineKind.AzureVm => "Azure",
+        MachineKind.ArcServer => "Arc",
+        _ => "Azure Local",
+    };
+
+    public static string DescribeState(MachineRecord machine) =>
+        string.IsNullOrWhiteSpace(machine.AgentState) ? machine.PowerState : machine.AgentState;
+
+    private static string DescribeRouteShort(ConnectionRouteKind route) => route switch
+    {
+        ConnectionRouteKind.DirectRdp => "Direct RDP",
+        ConnectionRouteKind.DirectSsh => "Direct SSH",
+        ConnectionRouteKind.BastionRdp => "Bastion RDP",
+        ConnectionRouteKind.BastionTunnelRdp => "Bastion tunnel",
+        ConnectionRouteKind.BastionSsh => "Bastion SSH",
+        ConnectionRouteKind.ArcRdp => "Arc RDP",
+        _ => "Arc SSH",
+    };
 }
 
 public sealed record AccessPathRow(AzureAccessPath Path)
@@ -541,20 +1033,17 @@ public sealed record AccessPathRow(AzureAccessPath Path)
     public override string ToString() => $"{Path.Route} — {Path.Readiness}";
 }
 
-public sealed record ConnectionIdentityRow(ConnectionIdentityProfile Profile)
+public sealed record LocalAccountRow(ConnectionIdentityProfile Profile)
 {
     public string DisplayName => Profile.DisplayName;
     public string Username => Profile.Username;
-    public string Kind => Profile.Kind.ToString();
-    public string Credential => Profile.CredentialTarget is null ? "No stored password" : "Windows Credential Manager";
-}
-
-public sealed record ConnectionMappingRow(ConnectionIdentityMapping Mapping, string IdentityName)
-{
-    public string Scope => Mapping.ScopeKind.ToString();
-    public string Match => Mapping.MatchValue;
-    public string Purpose => Mapping.IsRelayIdentity ? "Arc relay" : "Target login";
-    public int Priority => Mapping.Priority;
+    public string Kind => Profile.Username.Contains('\\') || Profile.Username.Contains('@')
+        ? "Domain account"
+        : "Local account";
+    public string Credential => Profile.CredentialTarget is null
+        ? "No stored password"
+        : "Password in Windows Credential Manager";
+    public override string ToString() => $"{DisplayName} ({Username})";
 }
 
 public sealed record SessionRow(ConnectionSession Session)
@@ -563,4 +1052,5 @@ public sealed record SessionRow(ConnectionSession Session)
     public string Route => Session.Route.ToString();
     public string State => Session.State.ToString();
     public string Started => Session.StartedAt.LocalDateTime.ToString("g");
+    public string Detail => Session.SafeStatus ?? string.Empty;
 }

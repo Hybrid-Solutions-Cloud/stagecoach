@@ -1,52 +1,64 @@
 # Quickstart
 
-## Install and open
+Stagecoach is an installable native Windows application. Install it, connect one Microsoft Entra
+account, add the local account you use inside your machines, and connect.
 
-Install the MSI, extract the self-contained ZIP, or run a repository build with `pwsh ./scripts/Run.ps1 -Configuration Release`. Stagecoach is a native desktop app; it does not start a local web server.
+## Requirements
 
-On first launch, open **Settings** and review workstation readiness. **Install / update local CLI extensions** installs the `resource-graph`, `ssh`, and `connectedmachine` Azure CLI extensions in Stagecoach's shared extension directory. Bastion commands ship with the current Azure CLI and are checked separately.
+- Windows 10 19041 or later, x64
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli-windows)
+- Windows OpenSSH client (`Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0`)
+- Remote Desktop Connection (`mstsc.exe`, present on every supported Windows build)
+- Azure RBAC that already lets you read the resources and reach the machines. Stagecoach does not
+  grant access; it uses the access you have.
 
-## Add an Entra identity
+## 1. Install
 
-1. Open **Identities & scope**.
-2. Enter an optional friendly name.
-3. Choose **Use my Windows account / choose account** for Windows Web Account Manager, or **Use device code instead** when policy or an RDP session makes that flow preferable.
-4. Complete Microsoft sign-in.
-5. Review the discovered tenants and subscriptions. Include only the scope Stagecoach should scan.
-6. Repeat for every Entra identity you operate.
+Run `Stagecoach-<version>-win-x64.msi`, or unpack the self-contained ZIP and run
+`Stagecoach.App.exe`. Both are published on the
+[releases page](https://github.com/Hybrid-Solutions-Cloud/stagecoach/releases).
 
-Each identity has its own `AZURE_CONFIG_DIR`, so account selection is deterministic and one account cannot silently replace another.
+## 2. Connect an Entra account
 
-## Add target accounts
+Open **Connect identities** and choose **Use my Windows account**. Web Account Manager offers the
+account you are already signed in with. **Use a device code instead** covers sessions where the
+broker cannot show interactive UI.
 
-Open **Connection identities** and create the accounts used inside servers—for example `CORP\admin`, `user@corp.example.com`, or `.\localadmin`. A password is optional for prompt-only, Entra, or SSH-key profiles. Passwords are written to Windows Credential Manager, not the Stagecoach database.
+Conditional Access and MFA prompts still appear. Stagecoach does not suppress them and does not
+claim to.
 
-Map each identity to one or more scopes. Specific mappings win over broad mappings:
+## 3. Include the scope you want scanned
 
-1. Machine
-2. Tag (`key=value`)
-3. Domain
-4. Resource group
-5. Subscription
-6. Tenant
+Stagecoach lists the tenants and subscriptions the account can see. Nothing is scanned until you
+include it — use **Include / exclude** on the ones you want, then **Rescan machines**.
 
-For Arc RDP, a mapping can be marked **Arc SSH relay identity**. This lets the SSH tunnel use a different account from the Windows account passed to Remote Desktop.
+New tenants and subscriptions that appear later are marked for review rather than silently added.
 
-## Discover and connect
+## 4. Add a local account
 
-Choose **Sync estate**. The Estate tab merges machines discovered through every enabled identity while retaining every valid access path. Select a route in the row when you need to override the preferred route, then choose **Connect**.
+Open **Local accounts** and add the account you use inside the machines:
 
-If a Windows Arc or Azure Local machine lacks WindowsOpenSSH, select it and choose **Prepare Arc**. Review the exact extension deployment under **Settings**, then explicitly apply or cancel it. Sync again after Azure reports completion.
+| Field | Example |
+|---|---|
+| Display name | `Prod local admin` |
+| Username | `svcadmin` for a local account, `CORP\svcadmin` for a domain account |
+| Password | Stored in Windows Credential Manager |
 
-## Required access
+For an Azure VM this is the local administrator created when the VM was provisioned — the
+`adminUsername` and `adminPassword` from its deployment.
 
-This tool is intended for administrators who already hold the necessary access. Stagecoach does not grant roles or activate PIM.
+## 5. Pin it, then connect
 
-- Azure Resource Graph read access to each selected subscription
-- Reader access to inventory resources, NICs, VNets, peerings, Bastion, Arc machines, and extensions
-- Bastion Reader and Virtual Machine login permissions appropriate to the selected authentication method
-- `Microsoft.HybridConnectivity/endpoints/connect/action` and the documented Arc SSH permissions for Arc relay
-- Contributor or equivalent extension-write rights only when deploying WindowsOpenSSH
-- A valid target-machine account with Remote Desktop or SSH logon rights
+On **Machines**, select a machine and choose **Edit**, then pick the local account under
+**Pinned local account** and save. That machine now connects on the first click without asking.
 
-Conditional Access, MFA, PIM, network policy, server policy, and endpoint protection remain authoritative.
+If you skip pinning, the first **Connect** asks which stored account to use and remembers the
+answer. Either way you never type a credential at connect time.
+
+Click **Connect**. The Azure CLI helper runs hidden — no console window appears — and the Remote
+Desktop or SSH session opens. Progress shows in the status bar at the bottom of the window.
+
+## 6. Keep it running
+
+Minimizing sends Stagecoach to the notification area so live sessions keep running. See
+[the interface](./interface.md) for the rest.

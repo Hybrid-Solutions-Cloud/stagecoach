@@ -1,12 +1,24 @@
 # About Stagecoach
 
-Stagecoach is a native Windows connection hub for experienced Azure and hybrid administrators. It replaces per-target scripts and repeated resource-ID copying with a profile-aware estate view.
+Stagecoach is an installable native Windows application for administrators who move between Azure
+estates. It combines the machines visible to one or more Microsoft Entra accounts into a single
+searchable list and turns each one into a deliberate, repeatable RDP or SSH action.
 
-The application keeps each Entra account isolated, lets the operator opt specific tenants and subscriptions into discovery, correlates the routes available to each machine, and launches the correct native RDP or SSH flow. Azure VM, Bastion, Azure Arc, and Azure Local targets appear in the same interface without pretending their authentication requirements are identical.
+It answers four questions without making you rebuild the context yourself:
 
-Stagecoach is local-first and single-user. It has no hosted control plane and no shared service principal. Azure permissions and target logon rights always belong to the current operator.
+1. Which Azure identity can see and connect to this machine?
+2. Which route reaches it — direct, Azure Bastion, Azure Arc, or Azure Local through Arc?
+3. Which account should be used inside the machine?
+4. Is the route ready now, and if not, exactly what is missing?
 
-- [Quickstart](../guide/quickstart.md)
-- [Architecture](../guide/architecture.md)
-- [Accepted design](https://github.com/Hybrid-Solutions-Cloud/stagecoach/blob/main/pmo/plans/stagecoach-design.md)
-- [Source](https://github.com/Hybrid-Solutions-Cloud/stagecoach)
+## What it is not
+
+- Not a hosted service or a shared credential broker.
+- Not a general Azure inventory or governance platform.
+- Not an authorization bypass. You must already hold the Azure RBAC and in-guest rights.
+- Not a replacement for Azure Bastion, Azure Arc, Azure CLI, OpenSSH, Remote Desktop, or Key Vault.
+- Not a manager or rotator of local administrator passwords.
+
+## Licence
+
+MIT. Copyright © 2026 Kristopher Turner / Hybrid Cloud Solutions.

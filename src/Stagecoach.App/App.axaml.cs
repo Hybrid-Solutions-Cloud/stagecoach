@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -8,7 +7,6 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Stagecoach.App.ViewModels;
 using Stagecoach.App.Views;
-using Stagecoach.Core;
 using Stagecoach.Infrastructure;
 using Stagecoach.Infrastructure.Azure;
 using Stagecoach.Infrastructure.Orchestration;
@@ -16,16 +14,22 @@ using Stagecoach.Infrastructure.Readiness;
 using Stagecoach.Infrastructure.Remediation;
 using Stagecoach.Infrastructure.Security;
 using Stagecoach.Infrastructure.Storage;
+using Stagecoach.Infrastructure.Updates;
+using Stagecoach.Core;
 
 namespace Stagecoach.App;
 
 public partial class App : Application
 {
+    private static readonly HttpClient UpdateHttpClient = new() { Timeout = TimeSpan.FromMinutes(10) };
+
     private TrayIcon? _trayIcon;
+    private NativeMenuItem? _traySessionItem;
     private DispatcherTimer? _syncTimer;
     private MainViewModel? _syncViewModel;
     private WindowIcon? _icon;
     private bool _allowExit;
+    private bool _exitConfirmationPending;
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
@@ -33,8 +37,11 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // Stagecoach owns live helper processes, so the app never dies just because the last
+            // window was hidden. Only an explicit Exit shuts it down.
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             StagecoachPaths.EnsureDirectories();
+
             var store = new EncryptedSqliteMetadataStore();
             var cli = new AzureCliRunner();
             var credentials = new WindowsCredentialManager();
@@ -43,53 +50,112 @@ public partial class App : Application
             var readiness = new WorkstationReadinessService(cli);
             var remediation = new ArcRemediationService(cli);
             var connections = new ProcessOrchestrator(cli, credentials, store);
+            var updates = new GitHubReleaseUpdateService(
+                UpdateHttpClient,
+                Path.Combine(StagecoachPaths.RootDirectory, "updates"),
+                CurrentProductVersion(),
+                new WindowsUpdateInstallerLauncher());
             var settingsStore = new AppSettingsStore(Path.Combine(StagecoachPaths.RootDirectory, "settings.json"));
-            var viewModel = new MainViewModel(store, identityService, discovery, credentials, connections, readiness, remediation, settingsStore);
+            var viewModel = new MainViewModel(
+                store, identityService, discovery, credentials, connections,
+                readiness, remediation, updates, settingsStore);
+
             _icon = StagecoachIcon.Create();
             var window = new MainWindow { DataContext = viewModel, Icon = _icon };
             desktop.MainWindow = window;
             ConfigureTray(desktop, window, viewModel);
+
             window.Opened += async (_, _) =>
             {
                 await viewModel.InitializeAsync();
                 ApplyTheme(viewModel.SelectedTheme);
                 ApplyAccent(viewModel.SelectedAccent);
                 ConfigureBackgroundSync(viewModel);
+                UpdateTrayStatus(viewModel);
                 if (viewModel.StartMinimized) HideToTray(window);
             };
+
             window.Closing += (_, args) =>
             {
                 if (_allowExit) return;
                 args.Cancel = true;
-                if (viewModel.SelectedCloseBehavior == CloseBehavior.Exit) Exit(desktop);
-                else HideToTray(window);
+                var exitOnClose = viewModel.SelectedCloseBehavior == CloseBehavior.Exit;
+                if (WindowLifecyclePolicy.ShouldExitOnClose(exitOnClose, viewModel.ActiveSessionCount))
+                {
+                    Exit(desktop);
+                    return;
+                }
+
+                if (exitOnClose)
+                    viewModel.StatusMessage =
+                        $"Stagecoach stayed running — {viewModel.ActiveSessionCount} session(s) are still open.";
+                HideToTray(window);
             };
+
             window.PropertyChanged += (_, args) =>
             {
                 if (args.Property == Window.WindowStateProperty &&
-                    window.WindowState == WindowState.Minimized && viewModel.MinimizeToNotificationArea)
+                    WindowLifecyclePolicy.ShouldHideOnMinimize(viewModel.MinimizeToNotificationArea, window.WindowState))
                     HideToTray(window);
             };
+
             viewModel.PropertyChanged += (_, args) =>
             {
-                if (args.PropertyName == nameof(MainViewModel.SelectedTheme)) ApplyTheme(viewModel.SelectedTheme);
-                if (args.PropertyName == nameof(MainViewModel.SelectedAccent)) ApplyAccent(viewModel.SelectedAccent);
-                if (args.PropertyName is nameof(MainViewModel.BackgroundSyncEnabled) or nameof(MainViewModel.BackgroundSyncMinutes))
-                    ConfigureBackgroundSync(viewModel);
+                switch (args.PropertyName)
+                {
+                    case nameof(MainViewModel.SelectedTheme):
+                        ApplyTheme(viewModel.SelectedTheme);
+                        break;
+                    case nameof(MainViewModel.SelectedAccent):
+                        ApplyAccent(viewModel.SelectedAccent);
+                        break;
+                    case nameof(MainViewModel.BackgroundSyncEnabled):
+                    case nameof(MainViewModel.BackgroundSyncMinutes):
+                        ConfigureBackgroundSync(viewModel);
+                        break;
+                    case nameof(MainViewModel.StatusMessage):
+                    case nameof(MainViewModel.IsBusy):
+                    case nameof(MainViewModel.ActiveSessionCount):
+                        UpdateTrayStatus(viewModel);
+                        break;
+                }
             };
         }
+
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static string CurrentProductVersion()
+    {
+        var version = typeof(App).Assembly.GetName().Version;
+        return version is null ? "0.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
     }
 
     private void ConfigureTray(IClassicDesktopStyleApplicationLifetime desktop, Window window, MainViewModel viewModel)
     {
         var show = new NativeMenuItem("Show Stagecoach");
-        var sync = new NativeMenuItem("Sync estate");
+        _traySessionItem = new NativeMenuItem("No sessions running") { IsEnabled = false };
+        var sessions = new NativeMenuItem("Sessions");
+        var sync = new NativeMenuItem("Sync now");
         var exit = new NativeMenuItem("Exit");
         var menu = new NativeMenu();
-        menu.Add(show); menu.Add(sync); menu.Add(new NativeMenuItemSeparator()); menu.Add(exit);
-        _trayIcon = new TrayIcon { ToolTipText = "Stagecoach — starting", Menu = menu, Icon = _icon, IsVisible = true };
+        menu.Add(show);
+        menu.Add(_traySessionItem);
+        menu.Add(new NativeMenuItemSeparator());
+        menu.Add(sessions);
+        menu.Add(sync);
+        menu.Add(new NativeMenuItemSeparator());
+        menu.Add(exit);
+
+        _trayIcon = new TrayIcon
+        {
+            ToolTipText = "Stagecoach — starting",
+            Menu = menu,
+            Icon = _icon,
+            IsVisible = true,
+        };
         TrayIcon.SetIcons(this, [_trayIcon]);
+
         void Show()
         {
             window.ShowInTaskbar = true;
@@ -97,15 +163,45 @@ public partial class App : Application
             window.WindowState = WindowState.Normal;
             window.Activate();
         }
+
         show.Click += (_, _) => Show();
         _trayIcon.Clicked += (_, _) => Show();
-        sync.Click += async (_, _) => await viewModel.SyncEstateAsync();
-        exit.Click += (_, _) => Exit(desktop);
-        viewModel.PropertyChanged += (_, args) =>
+        sessions.Click += (_, _) =>
         {
-            if (args.PropertyName is nameof(MainViewModel.StatusMessage) or nameof(MainViewModel.IsBusy))
-                _trayIcon.ToolTipText = viewModel.IsBusy ? "Stagecoach — working" : $"Stagecoach — {viewModel.StatusMessage}";
+            viewModel.SelectedTabIndex = 3;
+            Show();
         };
+        sync.Click += async (_, _) => await viewModel.SyncEstateAsync();
+        exit.Click += (_, _) =>
+        {
+            // Exiting kills every helper process, so a live session earns one confirmation.
+            if (WindowLifecyclePolicy.RequiresExitConfirmation(viewModel.ActiveSessionCount) && !_exitConfirmationPending)
+            {
+                _exitConfirmationPending = true;
+                viewModel.SelectedTabIndex = 3;
+                viewModel.StatusMessage =
+                    $"{viewModel.ActiveSessionCount} session(s) are still running. Choose Exit again to close them.";
+                Show();
+                return;
+            }
+
+            Exit(desktop);
+        };
+    }
+
+    private void UpdateTrayStatus(MainViewModel viewModel)
+    {
+        if (_trayIcon is null) return;
+        _trayIcon.ToolTipText = WindowLifecyclePolicy.DescribeTrayStatus(
+            viewModel.ActiveSessionCount, viewModel.IsBusy, viewModel.StatusMessage);
+        if (_traySessionItem is not null)
+            _traySessionItem.Header = viewModel.ActiveSessionCount switch
+            {
+                0 => "No sessions running",
+                1 => "1 session running",
+                var count => $"{count} sessions running",
+            };
+        if (viewModel.ActiveSessionCount == 0) _exitConfirmationPending = false;
     }
 
     private static void HideToTray(Window window)
@@ -118,7 +214,12 @@ public partial class App : Application
     {
         _allowExit = true;
         _syncTimer?.Stop();
-        if (_trayIcon is not null) { _trayIcon.IsVisible = false; _trayIcon.Dispose(); }
+        if (_trayIcon is not null)
+        {
+            _trayIcon.IsVisible = false;
+            _trayIcon.Dispose();
+        }
+
         desktop.Shutdown();
     }
 
@@ -149,8 +250,8 @@ public partial class App : Application
     private void ApplyAccent(AppAccent accent) => Resources["StagecoachAccentBrush"] = new SolidColorBrush(accent switch
     {
         AppAccent.Blue => Color.Parse("#2563A6"),
-        AppAccent.Green => Color.Parse("#2D7D5B"),
+        AppAccent.Green => Color.Parse("#27715B"),
         AppAccent.Purple => Color.Parse("#7651A8"),
-        _ => Color.Parse("#B9552D"),
+        _ => Color.Parse("#9A412B"),
     });
 }

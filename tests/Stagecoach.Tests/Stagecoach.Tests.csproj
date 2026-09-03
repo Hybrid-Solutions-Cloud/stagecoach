@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Stagecoach.Core\Stagecoach.Core.csproj" />
     <ProjectReference Include="..\..\src\Stagecoach.Infrastructure\Stagecoach.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Stagecoach.App\Stagecoach.App.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

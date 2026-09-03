@@ -3,7 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'Stagecoach',
   description:
-    'One login. Every VM. One click. Entra ID-authenticated RDP/SSH launcher for Azure VMs behind Bastion, Arc-enabled servers, and direct-reachable VMs.',
+    'One identity hub. Every reachable machine. One click. A native Windows launcher for RDP and SSH to Azure VMs behind Bastion, Azure Arc-enabled servers, and Azure Local machines.',
   base: '/stagecoach/',
 
   head: [
@@ -15,9 +15,10 @@ export default defineConfig({
 
     nav: [
       { text: 'Home', link: '/' },
+      { text: 'Download', link: '/download' },
       { text: 'Guide', link: '/guide/quickstart' },
+      { text: 'Interface', link: '/guide/interface' },
       { text: 'Architecture', link: '/guide/architecture' },
-      { text: 'Cmdlets', link: '/reference/cmdlets' },
       {
         text: 'About',
         items: [
@@ -35,17 +36,22 @@ export default defineConfig({
           text: 'Getting Started',
           items: [
             { text: 'Quickstart', link: '/guide/quickstart' },
+            { text: 'The interface', link: '/guide/interface' },
+            { text: 'Local accounts', link: '/guide/credentials' },
+            { text: 'Connection routes', link: '/guide/connections' },
+            { text: 'Updating Stagecoach', link: '/guide/updates' },
             { text: 'Architecture', link: '/guide/architecture' },
-            { text: 'Connection Routes', link: '/guide/connections' },
-            { text: 'Credential Resolver', link: '/guide/credentials' },
           ],
         },
         {
           text: 'Architecture Decisions (ADRs)',
           items: [
-            { text: 'ADR-001: Pode Backend', link: '/design/decisions/ADR-001-local-first-pode-backend' },
-            { text: 'ADR-002: Credential Hierarchy', link: '/design/decisions/ADR-002-credential-resolution-hierarchy' },
-            { text: 'ADR-003: Session Lifecycle', link: '/design/decisions/ADR-003-background-session-lifecycle' },
+            { text: 'ADR-001: Native Windows application', link: '/design/decisions/ADR-001-native-windows-application' },
+            { text: 'ADR-002: Identity and credential separation', link: '/design/decisions/ADR-002-identity-and-credential-separation' },
+            { text: 'ADR-003: Managed session lifecycle', link: '/design/decisions/ADR-003-managed-session-lifecycle' },
+            { text: 'ADR-004: Metadata cache and identity hub', link: '/design/decisions/ADR-004-persistent-metadata-cache-and-identity-hub' },
+            { text: 'ADR-005: Pinned local accounts', link: '/design/decisions/ADR-005-pinned-local-accounts-and-single-arc-identity' },
+            { text: 'ADR-006: In-app updates', link: '/design/decisions/ADR-006-in-app-updates' },
           ],
         },
       ],
@@ -53,7 +59,7 @@ export default defineConfig({
         {
           text: 'Reference',
           items: [
-            { text: 'Cmdlets', link: '/reference/cmdlets' },
+            { text: 'Build and packaging scripts', link: '/reference/scripts' },
           ],
         },
       ],
@@ -61,9 +67,12 @@ export default defineConfig({
         {
           text: 'Architecture Decisions (ADRs)',
           items: [
-            { text: 'ADR-001: Pode Backend', link: '/design/decisions/ADR-001-local-first-pode-backend' },
-            { text: 'ADR-002: Credential Hierarchy', link: '/design/decisions/ADR-002-credential-resolution-hierarchy' },
-            { text: 'ADR-003: Session Lifecycle', link: '/design/decisions/ADR-003-background-session-lifecycle' },
+            { text: 'ADR-001: Native Windows application', link: '/design/decisions/ADR-001-native-windows-application' },
+            { text: 'ADR-002: Identity and credential separation', link: '/design/decisions/ADR-002-identity-and-credential-separation' },
+            { text: 'ADR-003: Managed session lifecycle', link: '/design/decisions/ADR-003-managed-session-lifecycle' },
+            { text: 'ADR-004: Metadata cache and identity hub', link: '/design/decisions/ADR-004-persistent-metadata-cache-and-identity-hub' },
+            { text: 'ADR-005: Pinned local accounts', link: '/design/decisions/ADR-005-pinned-local-accounts-and-single-arc-identity' },
+            { text: 'ADR-006: In-app updates', link: '/design/decisions/ADR-006-in-app-updates' },
           ],
         },
       ],

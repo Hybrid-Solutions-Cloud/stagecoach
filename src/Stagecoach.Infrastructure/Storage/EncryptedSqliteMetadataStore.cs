@@ -113,6 +113,11 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
                 IsRelayIdentity INTEGER NOT NULL,
                 FOREIGN KEY (ConnectionIdentityId) REFERENCES ConnectionIdentities(Id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS MachinePins (
+                ResourceId TEXT PRIMARY KEY,
+                ConnectionIdentityId TEXT NOT NULL,
+                FOREIGN KEY (ConnectionIdentityId) REFERENCES ConnectionIdentities(Id) ON DELETE CASCADE
+            );
             """;
         await ExecuteAsync(connection, sql, cancellationToken);
     }
@@ -363,6 +368,40 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         await using var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM ConnectionMappings WHERE Id=$id";
         Add(command, "$id", mappingId.ToString("D"));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<string, Guid>> GetMachinePinsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ResourceId, ConnectionIdentityId FROM MachinePins";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var results = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        while (await reader.ReadAsync(cancellationToken))
+            results[reader.GetString(0)] = Guid.Parse(reader.GetString(1));
+        return results;
+    }
+
+    public async Task SetMachinePinAsync(string resourceId, Guid? connectionIdentityId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(resourceId);
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        if (connectionIdentityId is { } identityId)
+        {
+            command.CommandText = """
+                INSERT INTO MachinePins (ResourceId, ConnectionIdentityId) VALUES ($resource,$identity)
+                ON CONFLICT(ResourceId) DO UPDATE SET ConnectionIdentityId=$identity
+                """;
+            Add(command, "$identity", identityId.ToString("D"));
+        }
+        else
+        {
+            command.CommandText = "DELETE FROM MachinePins WHERE ResourceId=$resource";
+        }
+
+        Add(command, "$resource", resourceId.ToUpperInvariant());
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

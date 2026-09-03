@@ -73,8 +73,20 @@ Match rules may target an exact machine, resource tag, detected AD DNS/NetBIOS d
 group, subscription, or tenant. Most-specific wins; equal-rank ambiguity requires operator choice.
 The chosen profile is shown before the first connection and may be overridden.
 
-An Arc RDP route can require two identities: a relay SSH identity and the Windows desktop identity.
-Stagecoach models those separately instead of assuming the SSH account and RDP account are equal.
+An Arc RDP route relays SSH and then runs Remote Desktop over it. **Both hops use the same single
+connection identity.** The operator is never prompted to enter a local administrator account for an
+Arc machine; the account's password feeds the OpenSSH AskPass helper for the relay, and the same
+account is staged as a temporary `TERMSRV/localhost:<port>` credential so MSTSC does not prompt.
+
+> **Amended 2026-09-02.** This section previously modelled the relay SSH identity and the Windows
+> desktop identity separately. That produced two prompts for one Arc connection and is rejected.
+> See `docs/design/decisions/ADR-005-pinned-local-accounts-and-single-arc-identity.md`.
+
+Assignment is by **pinning**, not by rules. `Edit` on a machine pins one stored connection identity
+to it; the estate list shows the pinned account, or `Ask` when there is none. An unpinned machine
+asks once — a choice from the stored list, never typed credentials — and remembers the answer. The
+scope-kind / match-value / priority / relay-flag mapping engine described in earlier revisions is
+removed.
 
 ### 2.4 Operator profile
 
@@ -190,34 +202,58 @@ credentials and followed by a fresh readiness scan.
 
 ## 6. Desktop experience
 
-### 6.1 First run
+> **Amended 2026-09-02.** Sections 6.1 and 6.2 previously specified a first-run setup wizard ahead
+> of the estate. The application now opens **directly onto the machine list**; onboarding is done
+> in the navigation sections, reached when needed. The rest of 6.2 is unchanged in intent.
 
-The app opens directly into a short setup flow: workstation readiness, add Azure identity, choose
-tenant/subscription scope, first scan, then estate. Connection identities are introduced in context
-when needed rather than as a wall of credential fields.
+### 6.1 Landing screen
 
-### 6.2 Main estate screen
+The application opens on the machine list. An operator with no connected account sees the list
+surface with an inline panel telling them to open **Connect identities** — not a wizard placed in
+front of the product.
 
-One primary screen contains:
+### 6.2 Machine list
+
+The primary screen contains:
 
 - persistent search;
-- identity, tenant, subscription, type, OS, environment, state, and readiness filters;
-- favorites and recents;
-- grouped or flat view;
-- machine rows with name, type, OS/state, provenance, environment, best route, and readiness;
-- one primary Connect button plus a route/details menu;
-- a right-side details drawer for access paths, identity mapping, prerequisites, and diagnostics.
+- tenant, subscription, source, OS, and state filter dropdowns;
+- Favorites / Ready only / Pinned quick toggles, and a Reset action;
+- machine rows with favourite, name, source (Azure / Arc / Azure Local), OS, tenant, subscription,
+  state, route, and the pinned local account (or `Ask`);
+- a primary **Connect** action and an **Edit** action per row;
+- a details panel for the selected machine covering access path, pinned account, readiness reason,
+  and prerequisites.
 
-Navigation is limited to Estate, Identities & scope, Connection identities, Sessions, and Settings.
+`Edit` opens the per-machine panel: pin a local account, and override the route.
+
+Navigation is limited to Machines, Connect identities, Local accounts, Sessions, and Settings, with
+Machines first. It is rendered as a left product strip, not a tab bar.
 
 ### 6.3 Notification area and settings
 
-Minimize-to-notification-area is on by default. Closing asks once: exit, keep running, or remember
-the choice. Tray actions include Show, Sync, Sessions, Pause background sync, and Exit.
+Minimize-to-notification-area is on by default and the application keeps running. Because
+Stagecoach owns live helper processes, **closing the window never terminates live sessions**
+regardless of the configured close behaviour, and an explicit tray **Exit** requires confirmation
+while any session is running. Tray actions are Show, a live session count, Sessions, Sync now, and
+Exit.
 
-Settings support System/Light/Dark theme, an accessible accent palette, density, start minimized,
-close behavior, background refresh interval, port range, diagnostic retention, and default RDP
-display behavior. Theme values are design tokens; accessibility contrast is maintained.
+Settings support System/Light/Dark theme, an accessible accent palette, start minimized, close
+behavior, background refresh interval, workstation prerequisites, and software updates. Theme
+values are design tokens; accessibility contrast is maintained.
+
+### 6.4 Small screens and RDP sessions
+
+The window has a minimum size of 320x300, compact control density, and flat opaque surfaces with no
+corner radius, gradients, shadows, or transparency. This is a functional requirement, not a style
+preference: the window must fit a laptop display and a windowed RDP session, and must compress
+cleanly in a remote desktop bitmap cache.
+
+### 6.5 In-app updates
+
+Settings exposes check, verify, and install for new releases, accepted only from the signed
+Stagecoach release repository. See
+`docs/design/decisions/ADR-006-in-app-updates.md`.
 
 ## 7. Persistence and privacy
 

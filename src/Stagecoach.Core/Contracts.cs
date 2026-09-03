@@ -67,6 +67,15 @@ public interface IMetadataStore
     Task<IReadOnlyList<ConnectionIdentityMapping>> GetConnectionMappingsAsync(CancellationToken cancellationToken = default);
     Task UpsertConnectionMappingAsync(ConnectionIdentityMapping mapping, CancellationToken cancellationToken = default);
     Task RemoveConnectionMappingAsync(Guid mappingId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Local accounts pinned to a specific machine, keyed by upper-case resource ID. A pinned
+    /// machine never asks the operator which account to use.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, Guid>> GetMachinePinsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Pins a local account to a machine, or clears the pin when <paramref name="connectionIdentityId"/> is null.</summary>
+    Task SetMachinePinAsync(string resourceId, Guid? connectionIdentityId, CancellationToken cancellationToken = default);
 }
 
 public interface IEstateDiscoveryService
