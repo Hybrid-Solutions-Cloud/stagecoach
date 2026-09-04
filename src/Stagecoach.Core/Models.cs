@@ -127,6 +127,12 @@ public sealed record MachineRecord(
     IReadOnlyDictionary<string, string> Tags,
     IReadOnlyList<AzureAccessPath> AccessPaths,
     DateTimeOffset LastDiscoveredAt,
+    /// <summary>
+    /// True when the machine carries the Entra login extension, so a work account can sign in to
+    /// Windows or Linux on it. False means the in-guest account is local or domain — which decides
+    /// whether a local account has to be pinned before connecting.
+    /// </summary>
+    bool SupportsEntraLogin = false,
     bool IsFavorite = false,
     DateTimeOffset? LastConnectedAt = null)
 {

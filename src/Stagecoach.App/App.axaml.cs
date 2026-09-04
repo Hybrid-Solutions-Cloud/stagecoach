@@ -5,6 +5,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Stagecoach.App.Security;
 using Stagecoach.App.ViewModels;
 using Stagecoach.App.Views;
 using Stagecoach.Infrastructure;
@@ -77,11 +78,29 @@ public partial class App : Application
 
             window.Opened += async (_, _) =>
             {
-                // The unlock gate runs before anything reads the database, because the passphrase is
-                // what unwraps its key. Quitting here leaves the estate unread.
-                if (AppLock.IsEnabled)
+                // Ownership is settled before anything reads the database, because the passphrase
+                // chosen here is what wraps its key. First run configures the owner; every later
+                // start verifies it. Quitting either leaves the estate unread.
+                if (!AppOwner.IsConfigured)
                 {
-                    var unlock = new UnlockWindow { Icon = _icon };
+                    var setup = new OwnerSetupWindow(cli) { Icon = _icon };
+                    window.Hide();
+                    setup.Show();
+                    var entropy = await setup.Result;
+                    if (entropy is null)
+                    {
+                        Exit(desktop);
+                        return;
+                    }
+
+                    store.UseAdditionalEntropy(entropy);
+                    store.RewrapKey(entropy);
+                    window.Show();
+                    window.Activate();
+                }
+                else
+                {
+                    var unlock = new UnlockWindow(cli) { Icon = _icon };
                     window.Hide();
                     unlock.Show();
                     var entropy = await unlock.Result;

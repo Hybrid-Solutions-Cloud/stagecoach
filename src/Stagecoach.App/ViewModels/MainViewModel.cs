@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Stagecoach.Core;
+using Stagecoach.Infrastructure;
 using Stagecoach.Infrastructure.Storage;
 
 namespace Stagecoach.App.ViewModels;
@@ -774,66 +775,185 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<string> QuickRouteKinds { get; } = ["Azure Bastion", "Azure Arc"];
 
     [ObservableProperty] private bool _isQuickConnectOpen;
-    [ObservableProperty] private IdentityRow? _quickIdentity;
     [ObservableProperty] private TenantRow? _quickTenant;
     [ObservableProperty] private SubscriptionRow? _quickSubscription;
     [ObservableProperty] private string _quickRouteKind = "Azure Bastion";
     [ObservableProperty] private string _quickResourceName = string.Empty;
     [ObservableProperty] private MachineRow? _quickSelected;
-    [ObservableProperty] private LocalAccountRow? _quickAccount;
     [ObservableProperty] private string _quickStatus = string.Empty;
 
-    public bool QuickNeedsLocalAccount => QuickRouteKind == "Azure Arc";
+    /// <summary>An Entra-login machine needs no in-guest account; anything else does.</summary>
+    public bool QuickNeedsLocalAccount => QuickSelected is null || !QuickSelected.Machine.SupportsEntraLogin;
 
-    partial void OnQuickRouteKindChanged(string value) => OnPropertyChanged(nameof(QuickNeedsLocalAccount));
+    partial void OnQuickSelectedChanged(MachineRow? value) => OnPropertyChanged(nameof(QuickNeedsLocalAccount));
+
+    /// <summary>
+    /// The throwaway Azure CLI profile Quick Connect signs in to. It is deleted when the dialog
+    /// closes, so a quick connection leaves no connected identity behind.
+    /// </summary>
+    private string? _quickProfileDirectory;
+    private AzureIdentityProfile? _quickProfile;
+
+    [ObservableProperty] private bool _quickSignedIn;
+    [ObservableProperty] private string _quickAccountName = string.Empty;
+
+    /// <summary>
+    /// 1 sign in, 2 tenant, 3 subscription, 4 route, 5 resource, 6 in-guest account, 7 results.
+    /// Everything comes from the live sign-in; nothing is read from or written to the local store.
+    /// </summary>
+    [ObservableProperty] private int _quickStep = 1;
+
+    [ObservableProperty] private string _quickUsername = string.Empty;
+    [ObservableProperty] private string _quickPassword = string.Empty;
+
+    public bool QuickIsStep1 => QuickStep == 1;
+    public bool QuickIsStep2 => QuickStep == 2;
+    public bool QuickIsStep3 => QuickStep == 3;
+    public bool QuickIsStep4 => QuickStep == 4;
+    public bool QuickIsStep5 => QuickStep == 5;
+    public bool QuickIsStep6 => QuickStep == 6;
+    public bool QuickIsStep7 => QuickStep == 7;
+    public bool QuickCanGoBack => QuickStep is > 2 and < 8;
+
+    public string QuickStepTitle => QuickStep switch
+    {
+        1 => "Sign in",
+        2 => "Which tenant?",
+        3 => "Which subscription?",
+        4 => "How is it reached?",
+        5 => "Which machine?",
+        6 => "Account to use inside the machine",
+        _ => "Pick a machine",
+    };
+
+    partial void OnQuickStepChanged(int value)
+    {
+        OnPropertyChanged(nameof(QuickIsStep1));
+        OnPropertyChanged(nameof(QuickIsStep2));
+        OnPropertyChanged(nameof(QuickIsStep3));
+        OnPropertyChanged(nameof(QuickIsStep4));
+        OnPropertyChanged(nameof(QuickIsStep5));
+        OnPropertyChanged(nameof(QuickIsStep6));
+        OnPropertyChanged(nameof(QuickIsStep7));
+        OnPropertyChanged(nameof(QuickCanGoBack));
+        OnPropertyChanged(nameof(QuickStepTitle));
+    }
 
     [RelayCommand]
-    private async Task OpenQuickConnectAsync()
+    private void QuickBack()
     {
+        if (QuickStep > 2) QuickStep--;
+    }
+
+    [RelayCommand]
+    private async Task QuickNextAsync()
+    {
+        switch (QuickStep)
+        {
+            case 2 when QuickTenant is null:
+                QuickStatus = "Choose a tenant.";
+                return;
+            case 5:
+                // Search happens between choosing the machine name and choosing the account, so the
+                // account step only appears once there is something to connect to.
+                await QuickSearchAsync();
+                if (QuickResults.Count == 0) return;
+                QuickStep = 6;
+                return;
+            case 6:
+                QuickStep = 7;
+                return;
+            default:
+                QuickStep++;
+                return;
+        }
+    }
+
+    [RelayCommand]
+    private void OpenQuickConnect()
+    {
+        DiscardQuickProfile();
         QuickResults.Clear();
         QuickSubscriptions.Clear();
         QuickTenants.Clear();
         QuickResourceName = string.Empty;
         QuickSelected = null;
-        QuickStatus = Identities.Count == 0
-            ? "Connect a Microsoft Entra account first — Quick connect signs in through one you already have."
-            : "Choose an account and tenant, then search.";
-        QuickIdentity = SelectedIdentity ?? Identities.FirstOrDefault();
-        QuickAccount = LocalAccounts.FirstOrDefault();
+        QuickSignedIn = false;
+        QuickAccountName = string.Empty;
+        QuickUsername = string.Empty;
+        QuickPassword = string.Empty;
+        QuickStep = 1;
+        QuickStatus = "Sign in with the Entra account that can see the machine.";
         IsQuickConnectOpen = true;
-        await LoadQuickTenantsAsync();
     }
 
-    partial void OnQuickIdentityChanged(IdentityRow? value) => _ = LoadQuickTenantsAsync();
-
-    private async Task LoadQuickTenantsAsync()
+    /// <summary>
+    /// Signs in for this one connection only, in a fresh isolated profile that is never stored and
+    /// never becomes a connected identity.
+    /// </summary>
+    [RelayCommand]
+    private async Task QuickSignInAsync()
     {
-        QuickTenants.Clear();
-        QuickSubscriptions.Clear();
-        if (QuickIdentity is not { } row) return;
-        try
+        var progress = new Progress<string>(line => QuickStatus = line);
+        await RunBusyAsync("Signing in for a one-off connection", async () =>
         {
-            foreach (var tenant in await _store.GetTenantsAsync(row.Profile.Id)) QuickTenants.Add(new TenantRow(tenant));
+            DiscardQuickProfile();
+            _quickProfileDirectory = Path.Combine(
+                StagecoachPaths.RootDirectory, "quick", Guid.NewGuid().ToString("N"), "azure");
+            Directory.CreateDirectory(_quickProfileDirectory);
+
+            var identity = await _identityService.SignInTransientAsync(_quickProfileDirectory, progress);
+            _quickProfile = identity;
+            QuickAccountName = identity.AccountName;
+            QuickSignedIn = true;
+
+            QuickTenants.Clear();
+            QuickSubscriptions.Clear();
+            var inventory = await _identityService.RefreshInventoryAsync(identity);
+            foreach (var tenant in inventory.Tenants) QuickTenants.Add(new TenantRow(tenant));
             QuickTenant = QuickTenants.FirstOrDefault();
-            await LoadQuickSubscriptionsAsync();
-        }
-        catch (Exception exception)
-        {
-            CrashLog.Record("Quick connect tenants", exception);
-            QuickStatus = SafeMessage(exception);
-        }
+            LoadQuickSubscriptions(inventory);
+            QuickStatus = $"Signed in as {identity.AccountName}.";
+            QuickStep = 2;
+        });
     }
 
-    partial void OnQuickTenantChanged(TenantRow? value) => _ = LoadQuickSubscriptionsAsync();
+    private IdentityInventory? _quickInventory;
 
-    private async Task LoadQuickSubscriptionsAsync()
+    private void LoadQuickSubscriptions(IdentityInventory inventory)
     {
+        _quickInventory = inventory;
         QuickSubscriptions.Clear();
-        if (QuickIdentity is not { } row || QuickTenant is not { } tenant) return;
-        foreach (var subscription in await _store.GetSubscriptionsAsync(row.Profile.Id))
+        if (QuickTenant is not { } tenant) return;
+        foreach (var subscription in inventory.Subscriptions)
         {
             if (string.Equals(subscription.TenantId, tenant.TenantId, StringComparison.OrdinalIgnoreCase))
                 QuickSubscriptions.Add(new SubscriptionRow(subscription));
+        }
+    }
+
+    partial void OnQuickTenantChanged(TenantRow? value)
+    {
+        if (_quickInventory is { } inventory) LoadQuickSubscriptions(inventory);
+    }
+
+    private void DiscardQuickProfile()
+    {
+        _quickProfile = null;
+        _quickInventory = null;
+        if (_quickProfileDirectory is null) return;
+        try
+        {
+            var root = Path.GetDirectoryName(_quickProfileDirectory);
+            if (root is not null && Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Best effort; the folder holds only a throwaway token cache.
+        }
+        finally
+        {
+            _quickProfileDirectory = null;
         }
     }
 
@@ -845,7 +965,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task QuickSearchAsync()
     {
-        if (QuickIdentity is not { } identity) { QuickStatus = "Choose an account."; return; }
+        if (_quickProfile is not { } profile) { QuickStatus = "Sign in first."; return; }
         if (QuickTenant is not { } tenant) { QuickStatus = "Choose a tenant."; return; }
 
         await RunBusyAsync("Searching", async () =>
@@ -855,7 +975,7 @@ public partial class MainViewModel : ObservableObject
 
             SubscriptionScope[] scope = QuickSubscription is { } chosen
                 ? [chosen.Scope with { IsEnabled = true }]
-                : [.. (await _store.GetSubscriptionsAsync(identity.Profile.Id))
+                : [.. (_quickInventory?.Subscriptions ?? [])
                     .Where(item => string.Equals(item.TenantId, tenant.TenantId, StringComparison.OrdinalIgnoreCase))
                     .Select(item => item with { IsEnabled = true })];
 
@@ -866,7 +986,7 @@ public partial class MainViewModel : ObservableObject
             }
 
             // Discovery only — the result is never written to the store, so nothing is remembered.
-            var result = await _discovery.DiscoverAsync(identity.Profile, scope);
+            var result = await _discovery.DiscoverAsync(profile, scope);
 
             var wantArc = QuickRouteKind == "Azure Arc";
             var name = QuickResourceName.Trim();
@@ -894,14 +1014,55 @@ public partial class MainViewModel : ObservableObject
     {
         if (QuickSelected is not { } row) { QuickStatus = "Pick a machine first."; return; }
         if (row.SelectedPath is not { } path) { QuickStatus = "That machine has no usable route."; return; }
-        if (QuickNeedsLocalAccount && QuickAccount is null)
+        if (_quickProfile is not { } profile) { QuickStatus = "Sign in first."; return; }
+
+        var username = QuickUsername.Trim();
+        var needsAccount = !row.Machine.SupportsEntraLogin;
+        if (needsAccount && username.Length == 0)
         {
-            QuickStatus = "Choose the local account to use inside the machine.";
+            QuickStatus = "That machine signs in with a local or domain account. Enter one.";
+            QuickStep = 6;
             return;
         }
 
         IsQuickConnectOpen = false;
-        await LaunchAsync(row, path, QuickNeedsLocalAccount ? QuickAccount : QuickAccount);
+        await RunBusyAsync($"Connecting to {row.Name}", async () =>
+        {
+            // The typed account is held only long enough to launch. It is written to Windows
+            // Credential Manager because that is the one path the launcher reads a password from,
+            // and removed again immediately afterwards — nothing about this connection is kept.
+            ConnectionIdentityProfile? account = null;
+            var temporaryId = Guid.NewGuid();
+            try
+            {
+                if (username.Length > 0)
+                {
+                    account = new ConnectionIdentityProfile(
+                        temporaryId,
+                        username,
+                        username.Contains('\\') || username.Contains('@')
+                            ? ConnectionIdentityKind.ActiveDirectory
+                            : ConnectionIdentityKind.LocalAccount,
+                        username,
+                        _credentialStore.GetTargetName(temporaryId),
+                        null);
+                    await _credentialStore.SaveAsync(temporaryId, username, QuickPassword);
+                }
+
+                await _connections.ConnectAsync(row.Machine, path, profile, account, account);
+                await ReloadSessionsAsync();
+                await RecordAsync(
+                    AuditCategory.Connection,
+                    $"Quick connect to {row.Name}",
+                    $"{DescribeRoute(path.Route)}; nothing saved to the estate");
+                StatusMessage = $"{row.Name} — {DescribeRoute(path.Route)} started";
+            }
+            finally
+            {
+                QuickPassword = string.Empty;
+                if (account is not null) await _credentialStore.DeleteAsync(temporaryId);
+            }
+        });
     }
 
     [RelayCommand]
@@ -1597,7 +1758,16 @@ public partial class MachineRow : ObservableObject
         ReadinessState.Unsupported => "Unsupported",
         _ => "Unknown",
     };
-    public string Account => PinnedAccountName ?? "Ask";
+    /// <summary>
+    /// What will sign in to the guest. A machine carrying the Entra login extension needs no local
+    /// account at all; anything else needs one pinned, and saying "Ask" for a machine that does not
+    /// need an account was misleading.
+    /// </summary>
+    public string Account => PinnedAccountName ?? (Machine.SupportsEntraLogin ? "Entra sign-in" : "Ask");
+
+    public string SignInKind => Machine.SupportsEntraLogin
+        ? "Microsoft Entra — your work account signs in to the machine"
+        : "Local or domain account — a local account is needed";
     public string Favorite => Machine.IsFavorite ? "★" : "☆";
     public string ReasonText => SelectedPath?.Reason ?? "No route was correlated for this machine.";
     public bool IsReady => (SelectedPath?.Readiness ?? Machine.BestReadiness) == ReadinessState.Ready;

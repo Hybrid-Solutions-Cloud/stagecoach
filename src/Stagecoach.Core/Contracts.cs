@@ -52,6 +52,15 @@ public interface IIdentityService
         AzureIdentityProfile identity,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Signs in to a throwaway isolated profile for a one-off connection. Nothing is written to the
+    /// metadata store, so this never becomes a connected identity.
+    /// </summary>
+    Task<AzureIdentityProfile> SignInTransientAsync(
+        string configDirectory,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default);
+
     Task RemoveAsync(AzureIdentityProfile identity, CancellationToken cancellationToken = default);
 }
 

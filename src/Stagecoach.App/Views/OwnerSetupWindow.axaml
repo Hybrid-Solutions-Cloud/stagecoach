@@ -1,0 +1,79 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Stagecoach.App.Views.OwnerSetupWindow"
+        Title="Set up Stagecoach"
+        Width="620" Height="640" MinWidth="360" MinHeight="320"
+        WindowStartupLocation="CenterScreen">
+  <Grid RowDefinitions="Auto,*" Background="{DynamicResource StageColorCanvas}">
+    <Border Grid.Row="0" Background="{DynamicResource StageColorHeader}" Padding="20,14">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Border Width="38" Height="38" Background="{DynamicResource StagecoachAccentBrush}">
+          <TextBlock Text="S" FontSize="21" FontWeight="Bold" Foreground="White"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="Stagecoach" Foreground="White"
+                     FontSize="{StaticResource StageFontSize18}" FontWeight="SemiBold" />
+          <TextBlock Text="First-run setup" Foreground="#AEB9B5" FontSize="{StaticResource StageFontSize11}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="26,20" Spacing="14">
+        <StackPanel Spacing="5">
+          <TextBlock Classes="screen-eyebrow" Text="SECURE THIS INSTALLATION" />
+          <TextBlock Text="Who owns Stagecoach on this machine?" FontSize="{StaticResource StageFontSize20}"
+                     FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Classes="screen-description" FontSize="{StaticResource StageFontSize12}" TextWrapping="Wrap"
+                     Text="This account decides who may open Stagecoach and read its local estate. It is separate from the Entra accounts you later connect to discover machines — those are for reaching servers, not for signing in here." />
+        </StackPanel>
+
+        <Border Classes="panel">
+          <StackPanel Spacing="10">
+            <RadioButton x:Name="WindowsChoice" GroupName="Owner" IsChecked="True"
+                         Content="This Windows account" FontWeight="SemiBold" />
+            <TextBlock x:Name="WindowsAccountText" Margin="26,0,0,0"
+                       Foreground="{DynamicResource StageColorMuted}" TextWrapping="Wrap" />
+            <TextBlock Margin="26,0,0,0" FontSize="{StaticResource StageFontSize11}" Opacity="0.75" TextWrapping="Wrap"
+                       Text="Opening Stagecoach asks Windows to verify you — Windows Hello, or your Windows password where Hello is not set up." />
+
+            <RadioButton x:Name="EntraChoice" GroupName="Owner"
+                         Content="A Microsoft Entra account" FontWeight="SemiBold" />
+            <StackPanel Margin="26,0,0,0" Spacing="8" IsVisible="{Binding #EntraChoice.IsChecked}">
+              <TextBlock FontSize="{StaticResource StageFontSize11}" Opacity="0.75" TextWrapping="Wrap"
+                         Text="Sign in to the account that should own Stagecoach. It is kept in its own isolated profile and is never used to discover machines." />
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="EntraSignInButton" Content="Sign in with Microsoft" />
+                <TextBlock x:Name="EntraAccountText" VerticalAlignment="Center"
+                           Foreground="{DynamicResource StageColorMuted}" TextWrapping="Wrap" MaxWidth="300" />
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="panel">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="section-title" Text="Passphrase" />
+            <TextBlock FontSize="{StaticResource StageFontSize11}" Opacity="0.8" TextWrapping="Wrap"
+                       Text="Required either way. Windows Hello and an Entra sign-in prove who is present, but neither produces a key — the passphrase is what actually protects the local database, and it is the fallback when Hello cannot prompt, such as inside a remote session. It is never stored and cannot be recovered." />
+            <TextBox x:Name="PassphraseBox" PasswordChar="●" MinHeight="38"
+                     PlaceholderText="Passphrase, at least 8 characters"
+                     AutomationProperties.Name="Passphrase" />
+            <TextBox x:Name="ConfirmBox" PasswordChar="●" MinHeight="38"
+                     PlaceholderText="Confirm passphrase"
+                     AutomationProperties.Name="Confirm passphrase" />
+          </StackPanel>
+        </Border>
+
+        <TextBlock x:Name="ErrorText" Foreground="{DynamicResource StageColorDanger}"
+                   TextWrapping="Wrap" IsVisible="False" />
+
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="FinishButton" Classes="primary" Content="Finish setup" IsDefault="True" />
+          <Button x:Name="QuitButton" Content="Quit" />
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</Window>

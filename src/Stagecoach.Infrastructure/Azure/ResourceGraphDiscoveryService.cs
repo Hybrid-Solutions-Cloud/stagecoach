@@ -174,10 +174,19 @@ public sealed class ResourceGraphDiscoveryService(IAzureCliRunner cli) : IEstate
                     ReadinessState.Unsupported, "No direct, Bastion, or Arc route was discovered."));
             }
 
+            // Whether a work account can sign in to the guest is visible from its extensions:
+            // AADLoginForWindows / AADSSHLoginForLinux on an Azure VM, and the Arc equivalents.
+            // Without one of these the in-guest account is local or domain, and a local account has
+            // to be pinned before connecting.
+            var supportsEntraLogin =
+                HasExtension(canonicalId, extensions, "AADLoginForWindows") ||
+                HasExtension(canonicalId, extensions, "AADSSHLoginForLinux") ||
+                HasExtension(canonicalId, extensions, "AzureADSSHLoginForLinux");
+
             results.Add(new MachineRecord(
                 canonicalId, name, kind, os, osName, effective.ResourceGroup, effective.Location,
                 powerState, agentState, network?.PrivateIp, network?.PublicIp, network?.VirtualNetworkId,
-                domain, tags, MarkPreferred(paths), discoveredAt));
+                domain, tags, MarkPreferred(paths), discoveredAt, supportsEntraLogin));
         }
         return results.OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase).ToArray();
     }

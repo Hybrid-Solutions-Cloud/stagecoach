@@ -239,9 +239,14 @@
                       <TextBlock Grid.Column="8" Classes="column-header" Text="ACCOUNT" Margin="6,8" />
                       <TextBlock Grid.Column="9" Classes="column-header" Text="" Margin="6,8" />
                     </Grid>
-                    <ListBox Grid.Row="1" Classes="estate-list" MaxHeight="560"
+                    <!-- No height cap and no scrolling of its own: the list grows to its content and
+                         the page's scroll viewer moves the whole screen. A capped list inside a
+                         scrolling page produced two nested scroll regions, and on a short window
+                         the table was clipped to a single visible row. -->
+                    <ListBox Grid.Row="1" Classes="estate-list"
                              ItemsSource="{Binding Machines}" SelectedItem="{Binding SelectedMachine}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Disabled"
                              AutomationProperties.Name="Discovered machines">
                       <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:MachineRow">
@@ -290,6 +295,8 @@
                   <TextBlock Text="{Binding SelectedMachine.Subscription, StringFormat='Subscription  {0}'}" Opacity="0.75" />
                   <TextBlock Text="{Binding SelectedMachine.Route, StringFormat='Route  {0}'}" Opacity="0.75" />
                   <TextBlock Text="{Binding SelectedMachine.Account, StringFormat='Local account  {0}'}" Opacity="0.75" />
+                  <TextBlock Text="{Binding SelectedMachine.SignInKind, StringFormat='Windows sign-in  {0}'}"
+                             Opacity="0.75" TextWrapping="Wrap" />
                   <Border Classes="callout" IsVisible="{Binding SelectedMachine.IsReady}">
                     <TextBlock Text="{Binding SelectedMachine.ReasonText}" TextWrapping="Wrap" />
                   </Border>
@@ -942,18 +949,31 @@
                          Text="Nothing is saved: no account, no pin, no scope, no estate entry. Leave the subscription or the name empty to search wider." />
             </StackPanel>
 
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="10" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
-              <StackPanel Spacing="4">
-                <TextBlock Classes="field-label" Text="Account" />
-                <ComboBox HorizontalAlignment="Stretch" MinHeight="36"
-                          ItemsSource="{Binding Identities}" SelectedItem="{Binding QuickIdentity}"
-                          AutomationProperties.Name="Entra account" />
+            <!-- Signs in fresh for this one connection. No connected identity is created, and the
+                 profile is deleted when the dialog closes. -->
+            <Border Classes="callout">
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button Classes="primary" Content="Sign in with Microsoft"
+                        Command="{Binding QuickSignInCommand}" IsEnabled="{Binding !IsBusy}"
+                        AutomationProperties.Name="Sign in for this connection only" />
+                <TextBlock Text="{Binding QuickAccountName}" VerticalAlignment="Center" FontWeight="SemiBold"
+                           IsVisible="{Binding QuickSignedIn}" />
               </StackPanel>
-              <StackPanel Grid.Column="1" Spacing="4">
+            </Border>
+
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10"
+                  IsEnabled="{Binding QuickSignedIn}">
+              <StackPanel Spacing="4">
                 <TextBlock Classes="field-label" Text="Tenant" />
                 <ComboBox HorizontalAlignment="Stretch" MinHeight="36"
                           ItemsSource="{Binding QuickTenants}" SelectedItem="{Binding QuickTenant}"
                           AutomationProperties.Name="Tenant" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" Spacing="4">
+                <TextBlock Classes="field-label" Text="Reached through" />
+                <ComboBox HorizontalAlignment="Stretch" MinHeight="36"
+                          ItemsSource="{Binding QuickRouteKinds}" SelectedItem="{Binding QuickRouteKind}"
+                          AutomationProperties.Name="Bastion or Arc" />
               </StackPanel>
 
               <StackPanel Grid.Row="1" Spacing="4">
@@ -962,24 +982,28 @@
                           ItemsSource="{Binding QuickSubscriptions}" SelectedItem="{Binding QuickSubscription}"
                           AutomationProperties.Name="Subscription, optional" />
               </StackPanel>
+              <!-- Typed, never taken from the stored accounts: a quick connection uses nothing the
+                   application has saved. Left empty for a machine that signs in with Entra. -->
               <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
-                <TextBlock Classes="field-label" Text="Reached through" />
-                <ComboBox HorizontalAlignment="Stretch" MinHeight="36"
-                          ItemsSource="{Binding QuickRouteKinds}" SelectedItem="{Binding QuickRouteKind}"
-                          AutomationProperties.Name="Bastion or Arc" />
+                <TextBlock Classes="field-label" Text="In-guest account — optional" />
+                <TextBox Text="{Binding QuickUsername}" MinHeight="36"
+                         PlaceholderText="DOMAIN\username, or username"
+                         AutomationProperties.Name="Account to use inside the machine" />
               </StackPanel>
 
-              <StackPanel Grid.Row="2" Spacing="4">
+              <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Spacing="4">
+                <TextBlock Classes="field-label" Text="Password — only if an account was entered" />
+                <TextBox Text="{Binding QuickPassword}" PasswordChar="●" MinHeight="36"
+                         AutomationProperties.Name="Password for the in-guest account" />
+                <TextBlock FontSize="{StaticResource StageFontSize11}" Opacity="0.75" TextWrapping="Wrap"
+                           Text="Used once to launch this connection and then removed. It is never added to your saved accounts." />
+              </StackPanel>
+
+              <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Spacing="4">
                 <TextBlock Classes="field-label" Text="Resource name — optional" />
                 <TextBox Text="{Binding QuickResourceName}" MinHeight="36"
                          PlaceholderText="Leave empty to list everything"
                          AutomationProperties.Name="Resource name, optional" />
-              </StackPanel>
-              <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4">
-                <TextBlock Classes="field-label" Text="Local account" />
-                <ComboBox HorizontalAlignment="Stretch" MinHeight="36"
-                          ItemsSource="{Binding LocalAccounts}" SelectedItem="{Binding QuickAccount}"
-                          AutomationProperties.Name="Local account to use inside the machine" />
               </StackPanel>
             </Grid>
 

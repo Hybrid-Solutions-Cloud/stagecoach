@@ -126,6 +126,33 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
         return updated;
     }
 
+    /// <summary>
+    /// Signs in for a single connection. Nothing is written to the metadata store, so the account
+    /// never becomes a connected identity and the profile can be discarded afterwards.
+    /// </summary>
+    public async Task<AzureIdentityProfile> SignInTransientAsync(
+        string configDirectory,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(configDirectory);
+        Directory.CreateDirectory(configDirectory);
+        await ConfigureProfileAsync(configDirectory, cancellationToken);
+
+        var result = await cli.RunInteractiveAsync(
+            configDirectory, ["login", "--allow-no-subscriptions", "--output", "json"], progress, cancellationToken);
+        if (!result.Succeeded) throw new InvalidOperationException(SafeLoginError(result.StandardError));
+
+        var accountName = await ReadAuthenticatedAccountNameAsync(configDirectory, cancellationToken);
+        return new AzureIdentityProfile(
+            Guid.NewGuid(),
+            accountName,
+            accountName,
+            configDirectory,
+            AuthenticationState.Ready,
+            DateTimeOffset.UtcNow);
+    }
+
     public async Task<IdentityInventory> RefreshInventoryAsync(
         AzureIdentityProfile identity,
         CancellationToken cancellationToken = default)

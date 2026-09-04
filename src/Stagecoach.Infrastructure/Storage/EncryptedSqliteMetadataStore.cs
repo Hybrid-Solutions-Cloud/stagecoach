@@ -81,6 +81,7 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
                 DomainName TEXT NULL,
                 TagsJson TEXT NOT NULL,
                 LastDiscoveredAt TEXT NOT NULL,
+                SupportsEntraLogin INTEGER NOT NULL DEFAULT 0,
                 IsFavorite INTEGER NOT NULL DEFAULT 0,
                 LastConnectedAt TEXT NULL
             );
@@ -134,6 +135,19 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
             );
             """;
         await ExecuteAsync(connection, sql, cancellationToken);
+
+        // Databases created before this column existed are upgraded in place; CREATE TABLE IF NOT
+        // EXISTS leaves an older table untouched.
+        await AddColumnIfMissingAsync(connection, "Machines", "SupportsEntraLogin", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+    }
+
+    private static async Task AddColumnIfMissingAsync(
+        SqliteConnection connection, string table, string column, string definition, CancellationToken cancellationToken)
+    {
+        await using var check = connection.CreateCommand();
+        check.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name='{column}'";
+        if (Convert.ToInt32(await check.ExecuteScalarAsync(cancellationToken)) > 0) return;
+        await ExecuteAsync(connection, $"ALTER TABLE {table} ADD COLUMN {column} {definition};", cancellationToken);
     }
 
     public async Task<IReadOnlyList<AzureIdentityProfile>> GetIdentitiesAsync(CancellationToken cancellationToken = default)
@@ -266,7 +280,7 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
                 machineReader.GetString(8), NullableString(machineReader, 9), NullableString(machineReader, 10),
                 NullableString(machineReader, 11), NullableString(machineReader, 12), tags,
                 paths.GetValueOrDefault(resourceId) ?? [], DateTimeOffset.Parse(machineReader.GetString(14)),
-                machineReader.GetInt32(15) != 0, ParseDate(machineReader, 16)));
+                machineReader.GetInt32(15) != 0, machineReader.GetInt32(16) != 0, ParseDate(machineReader, 17)));
         }
         return machines;
     }
@@ -604,11 +618,11 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO Machines VALUES ($id,$name,$kind,$os,$osName,$rg,$location,$power,$agent,$private,$public,$vnet,$domain,$tags,$seen,$favorite,$connected)
+            INSERT INTO Machines VALUES ($id,$name,$kind,$os,$osName,$rg,$location,$power,$agent,$private,$public,$vnet,$domain,$tags,$seen,$entra,$favorite,$connected)
             ON CONFLICT(ResourceId) DO UPDATE SET Name=$name,Kind=$kind,OperatingSystem=$os,
                 OperatingSystemName=$osName,ResourceGroup=$rg,Location=$location,PowerState=$power,
                 AgentState=$agent,PrivateIpAddress=$private,PublicIpAddress=$public,VirtualNetworkId=$vnet,
-                DomainName=$domain,TagsJson=$tags,LastDiscoveredAt=$seen
+                DomainName=$domain,TagsJson=$tags,LastDiscoveredAt=$seen,SupportsEntraLogin=$entra
             """;
         Add(command, "$id", machine.ResourceId);
         Add(command, "$name", machine.Name);
@@ -625,6 +639,7 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         Add(command, "$domain", machine.DomainName);
         Add(command, "$tags", JsonSerializer.Serialize(machine.Tags));
         Add(command, "$seen", machine.LastDiscoveredAt.ToString("O"));
+        Add(command, "$entra", machine.SupportsEntraLogin ? 1 : 0);
         Add(command, "$favorite", machine.IsFavorite ? 1 : 0);
         Add(command, "$connected", Format(machine.LastConnectedAt));
         await command.ExecuteNonQueryAsync(cancellationToken);
