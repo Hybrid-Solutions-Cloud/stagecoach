@@ -16,6 +16,7 @@ public sealed class WorkstationReadinessService(IAzureCliRunner cli) : IWorkstat
         var hasSshExtension = false;
         Version? sshVersion = null;
         var hasBastion = false;
+        string? bastionFailure = null;
         if (hasAzureCli)
         {
             var version = await cli.RunAsync(BootstrapConfig, ["version", "--output", "json"], cancellationToken);
@@ -34,6 +35,15 @@ public sealed class WorkstationReadinessService(IAzureCliRunner cli) : IWorkstat
             }
             var bastion = await cli.RunAsync(BootstrapConfig, ["network", "bastion", "--help"], cancellationToken);
             hasBastion = bastion.Succeeded;
+
+            // "Install Bastion command support" is not something anyone can act on: the commands are
+            // part of the Azure CLI itself. When the probe fails, say what the CLI actually said.
+            if (!hasBastion)
+            {
+                bastionFailure = bastion.StandardError
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .FirstOrDefault(line => line.Length > 0);
+            }
         }
 
         var hasSsh = File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "OpenSSH", "ssh.exe")) || FindExecutable("ssh.exe") is not null;
@@ -41,7 +51,13 @@ public sealed class WorkstationReadinessService(IAzureCliRunner cli) : IWorkstat
         if (!hasAzureCli) actions.Add("Install the current 64-bit Azure CLI for Windows.");
         else if (cliVersion is not null && cliVersion < new Version(2, 61, 0)) actions.Add("Update Azure CLI to 2.61.0 or later for Windows Web Account Manager sign-in.");
         if (!hasSshExtension) actions.Add("Install or update the Azure CLI ssh extension (2.0.4 or later).");
-        if (!hasBastion) actions.Add("Install or update Azure CLI Bastion command support.");
+        if (!hasBastion)
+        {
+            actions.Add(bastionFailure is null
+                ? "Azure CLI Bastion commands did not respond. Connections through Bastion will fail."
+                : $"Azure CLI Bastion commands did not respond: {bastionFailure}");
+        }
+
         if (!hasSsh) actions.Add("Install the Windows OpenSSH Client optional capability.");
         if (!hasMstsc) actions.Add("Remote Desktop Connection (mstsc.exe) is unavailable.");
 

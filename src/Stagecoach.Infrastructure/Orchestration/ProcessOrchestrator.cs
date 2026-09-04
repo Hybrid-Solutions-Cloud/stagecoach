@@ -135,6 +135,13 @@ public sealed class ProcessOrchestrator(
             ["network", "bastion", "rdp", "--name", name, "--resource-group", resourceGroup,
              "--subscription", accessPath.SubscriptionId, "--target-resource-id", machine.ResourceId, "--enable-mfa"],
             cancellationToken: cancellationToken);
+
+        // Nothing here opens a window that Stagecoach can watch for, so the only evidence the
+        // connection began is that the helper is still running. Reporting a session the instant the
+        // process was started meant a command that failed immediately -- an Azure CLI without
+        // Bastion support, for one -- was reported as connected while nothing ever appeared.
+        await EnsureHelperSurvivedAsync(runtime.Helper, "Bastion RDP", cancellationToken);
+
         runtime.Session = runtime.Session with
         {
             State = SessionState.InteractionRequired,
@@ -323,6 +330,28 @@ public sealed class ProcessOrchestrator(
         var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
         return port;
+    }
+
+    /// <summary>
+    /// Gives a helper a moment to fall over, and reports what it said if it does.
+    /// <para>
+    /// Used where there is no port or window to wait for. A missing Azure CLI Bastion extension, a
+    /// bad resource, or an expired sign-in all end the process within a second or two, and without
+    /// this the session was announced as connected regardless.
+    /// </para>
+    /// </summary>
+    private static async Task EnsureHelperSurvivedAsync(
+        IManagedCommand helper, string what, CancellationToken cancellationToken)
+    {
+        var settled = await Task.WhenAny(helper.Completion, Task.Delay(TimeSpan.FromSeconds(4), cancellationToken));
+        if (settled != helper.Completion) return;
+
+        var detail = helper.GetSafeOutput().LastOrDefault(line => !string.IsNullOrWhiteSpace(line));
+        throw new InvalidOperationException(
+            $"{what} ended immediately without connecting." +
+            (detail is null
+                ? " The Azure CLI reported nothing. Check that Bastion command support is installed under Settings."
+                : $" The Azure CLI reported: {detail}"));
     }
 
     private static async Task WaitForPortAsync(int port, IManagedCommand helper, CancellationToken cancellationToken)
