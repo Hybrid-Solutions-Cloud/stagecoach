@@ -73,6 +73,32 @@ public static class AppOwner
     }
 
     /// <summary>
+    /// True when the Windows account signed in right now is a Microsoft Entra cloud account, as it is
+    /// on any Entra joined machine.
+    /// <para>
+    /// This matters because <c>LogonUser</c> cannot validate a cloud account with a password. A
+    /// credential prompt shown to one of these can only ever fail, however correct the password —
+    /// so the prompt is pointless, and its failure must not be read as the operator being refused.
+    /// </para>
+    /// </summary>
+    public static bool CurrentWindowsAccountIsCloudAccount()
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            // S-1-12-1-… is the Entra form; CloudAP is the authentication package that issues it.
+            return identity.User?.Value.StartsWith("S-1-12-1-", StringComparison.Ordinal) == true ||
+                   string.Equals(identity.AuthenticationType, "CloudAP", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception exception) when (
+            exception is System.Security.SecurityException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// The user principal name of the Windows account signed in right now, or null when it has none.
     /// <para>
     /// On a Microsoft Entra joined machine the Windows account <b>is</b> the Entra account, so this

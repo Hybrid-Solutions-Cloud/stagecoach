@@ -21,6 +21,7 @@ public partial class UnlockWindow : Window
     private readonly IAzureCliRunner _cli;
     private Button? _continueButton;
     private Button? _switchOwnerButton;
+    private Button? _verifyButton;
     private bool _verifying;
 
     public UnlockWindow() : this(new Infrastructure.Azure.AzureCliRunner()) { }
@@ -40,6 +41,7 @@ public partial class UnlockWindow : Window
         var reset = this.FindControl<Button>("ResetButton")!;
 
         _continueButton = continueButton;
+        _verifyButton = verifyButton;
         continueButton.Click += (_, _) =>
         {
             _result.TrySetResult(true);
@@ -144,9 +146,22 @@ public partial class UnlockWindow : Window
             var result = await hello.VerifyAsync("Unlock Stagecoach");
 
             // Hello cannot prompt over RDP and is not enrolled everywhere. Windows can still verify
-            // the operator with their own credentials, which is what Prospector falls back to.
+            // the operator with their own credentials — except on an Entra joined machine, where the
+            // signed-in account is a cloud account that LogonUser cannot validate with a password.
+            // Asking there produces a prompt that always fails however correct the password, and the
+            // failure then looked like a refusal: prompt, reject, back to the start, forever.
             if (WindowsHelloVerifier.ShouldFallBackToCredentials(result))
             {
+                if (AppOwner.CurrentWindowsAccountIsCloudAccount())
+                {
+                    status.Text =
+                        $"Windows cannot verify {AppOwner.CurrentWindowsAccount().Name} here — Windows Hello " +
+                        "cannot prompt in a remote session, and a Microsoft Entra account cannot be checked " +
+                        "with a password. You are already signed in to Windows as the owner of this installation.";
+                    OfferToContinue(UserVerificationResult.CredentialPromptUnavailable);
+                    return;
+                }
+
                 status.Text = WindowsHelloVerifier.Describe(result);
                 var credentials = new WindowsCredentialVerifier(() => TryGetPlatformHandle()?.Handle ?? 0);
                 result = await credentials.VerifyAsync("Unlock Stagecoach");
@@ -191,6 +206,12 @@ public partial class UnlockWindow : Window
         if (!WindowsHelloVerifier.CouldNotVerify(result) || _continueButton is null) return;
         _continueButton.Content = $"Continue as {AppOwner.CurrentWindowsAccount().Name}";
         _continueButton.IsVisible = true;
+
+        // When nothing can verify, this is the way in — not a footnote under a failure. Make it the
+        // obvious action and take the emphasis off the button that cannot succeed.
+        _continueButton.Classes.Add("primary");
+        if (_verifyButton is not null) _verifyButton.Classes.Remove("primary");
+        _continueButton.Focus();
     }
 
     private async Task VerifyEntraAsync(TextBlock status, AppOwnerRecord owner)
@@ -293,8 +314,16 @@ public partial class UnlockWindow : Window
             var result = await hello.VerifyAsync("Take ownership of Stagecoach");
             if (WindowsHelloVerifier.ShouldFallBackToCredentials(result))
             {
-                var credentials = new WindowsCredentialVerifier(() => TryGetPlatformHandle()?.Handle ?? 0);
-                result = await credentials.VerifyAsync("Take ownership of Stagecoach");
+                // Same reasoning as unlocking: a password prompt for a cloud account can only fail.
+                if (AppOwner.CurrentWindowsAccountIsCloudAccount())
+                {
+                    result = UserVerificationResult.CredentialPromptUnavailable;
+                }
+                else
+                {
+                    var credentials = new WindowsCredentialVerifier(() => TryGetPlatformHandle()?.Handle ?? 0);
+                    result = await credentials.VerifyAsync("Take ownership of Stagecoach");
+                }
             }
 
             // Taking ownership requires Windows to have said yes, or to have been unable to ask at
