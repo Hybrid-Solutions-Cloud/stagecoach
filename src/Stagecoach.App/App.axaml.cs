@@ -76,8 +76,17 @@ public partial class App : Application
             desktop.MainWindow = window;
             ConfigureTray(desktop, window, viewModel);
 
+            // Avalonia raises Opened on every Show(), and this handler hides the window, gates on the
+            // owner, and shows it again — so without this it re-entered itself forever: hide, another
+            // unlock window, "Checking your sign-in…", show, hide again. That is the flashing, and
+            // every pass also fired the workstation probe, which is what buried the Azure CLI under
+            // a storm of processes. Startup runs once.
+            var startupBegun = false;
             window.Opened += async (_, _) =>
             {
+                if (startupBegun) return;
+                startupBegun = true;
+
                 // Ownership is settled before anything reads the database. First run configures the
                 // owner; every later start verifies it. Quitting either leaves the estate unread.
                 // Nothing here is a secret Stagecoach invented — the database is protected by
