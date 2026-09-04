@@ -246,6 +246,14 @@ public sealed class AzureCliRunner : IAzureCliRunner
         startInfo.Environment["AZURE_CORE_COLLECT_TELEMETRY"] = "false";
         startInfo.Environment["AZURE_CORE_ONLY_SHOW_ERRORS"] = "true";
         startInfo.Environment["AZURE_CORE_NO_COLOR"] = "true";
+
+        // Set here as well as in each profile's configuration, because this is the one place every
+        // invocation passes through. A profile that has not been configured yet -- or was created by
+        // an older version -- still cannot stop to ask a question, and a question asked of a hidden
+        // process with redirected input only ever ends in "EOF when reading a line".
+        startInfo.Environment["AZURE_CORE_LOGIN_EXPERIENCE_V2"] = "off";
+        startInfo.Environment["AZURE_EXTENSION_USE_DYNAMIC_INSTALL"] = "yes_without_prompt";
+        startInfo.Environment["AZURE_EXTENSION_DYNAMIC_INSTALL_ALLOW_PREVIEW"] = "false";
         foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
         return startInfo;
     }

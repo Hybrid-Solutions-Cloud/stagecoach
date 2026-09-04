@@ -61,7 +61,10 @@ public sealed class ProcessOrchestrator(
         }
         catch
         {
+            // Removed as well as disposed. Leaving it in the registry meant every failed attempt
+            // stayed in the session list for the life of the application.
             runtime.Session = runtime.Session with { State = SessionState.Failed, SafeStatus = "Connection launch failed" };
+            _sessions.TryRemove(session.Id, out _);
             await runtime.DisposeAsync();
             throw;
         }
@@ -298,12 +301,17 @@ public sealed class ProcessOrchestrator(
     {
         if (runtime.Helper is null) return;
         var exitCode = await runtime.Helper.Completion;
-        if (_sessions.TryGetValue(runtime.Session.Id, out _))
-            runtime.Session = runtime.Session with
-            {
-                State = exitCode == 0 ? SessionState.Stopped : SessionState.Failed,
-                SafeStatus = exitCode == 0 ? "Session ended" : "Connection helper exited",
-            };
+        runtime.Session = runtime.Session with
+        {
+            State = exitCode == 0 ? SessionState.Stopped : SessionState.Failed,
+            SafeStatus = exitCode == 0 ? "Session ended" : "Connection helper exited",
+        };
+
+        // The session is over, so release what it holds. This used to update the state and stop
+        // there: the runtime stayed in the registry and was never disposed, which left the staged
+        // Remote Desktop credential sitting in Windows Credential Manager for good. Routes with a
+        // client process are cleaned up by WatchClientAsync; these have only a helper.
+        if (_sessions.TryRemove(runtime.Session.Id, out _)) await runtime.DisposeAsync();
     }
 
     private static Process StartMstsc(string endpoint, string? username)
