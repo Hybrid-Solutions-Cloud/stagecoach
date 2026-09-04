@@ -25,7 +25,9 @@ public static class OwnerEntraSignIn
         Directory.CreateDirectory(directory);
         await cli.RunAsync(directory,
             ["config", "set", "core.login_experience_v2=off", "core.collect_telemetry=false",
-             "core.only_show_errors=true", "core.no_color=true"], cancellationToken);
+             "core.only_show_errors=true", "core.no_color=true",
+             "extension.use_dynamic_install=yes_without_prompt",
+             "extension.dynamic_install_allow_preview=false"], cancellationToken);
     }
 
     /// <summary>

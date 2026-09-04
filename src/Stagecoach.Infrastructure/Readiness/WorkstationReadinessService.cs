@@ -19,6 +19,12 @@ public sealed class WorkstationReadinessService(IAzureCliRunner cli) : IWorkstat
         string? bastionFailure = null;
         if (hasAzureCli)
         {
+            // The bootstrap profile is where every probe runs, and nothing ever configured it. An
+            // unconfigured profile prompts — and a prompt in a hidden process with redirected input
+            // dies with "EOF when reading a line", which is exactly how Bastion support came to look
+            // missing on a machine whose Azure CLI supports it perfectly well.
+            await ConfigureProfileAsync(cancellationToken);
+
             var version = await cli.RunAsync(BootstrapConfig, ["version", "--output", "json"], cancellationToken);
             if (version.Succeeded)
             {
@@ -66,9 +72,26 @@ public sealed class WorkstationReadinessService(IAzureCliRunner cli) : IWorkstat
             hasBastion, hasSsh, hasMstsc, actions);
     }
 
+    /// <summary>
+    /// Settles the Azure CLI profile the probes run in, so no command it runs can stop to ask a
+    /// question. Cheap, and safe to repeat.
+    /// </summary>
+    private async Task ConfigureProfileAsync(CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(BootstrapConfig);
+        await cli.RunAsync(BootstrapConfig,
+            ["config", "set", "core.collect_telemetry=false", "core.only_show_errors=true",
+             "core.no_color=true", "extension.use_dynamic_install=yes_without_prompt",
+             "extension.dynamic_install_allow_preview=false"], cancellationToken);
+    }
+
     public async Task PrepareCliExtensionsAsync(CancellationToken cancellationToken = default)
     {
-        foreach (var extension in new[] { "resource-graph", "ssh", "connectedmachine" })
+        await ConfigureProfileAsync(cancellationToken);
+
+        // "bastion" is installed deliberately rather than left to a dynamic install at the moment
+        // somebody is trying to connect.
+        foreach (var extension in new[] { "resource-graph", "ssh", "connectedmachine", "bastion" })
         {
             var result = await cli.RunAsync(BootstrapConfig,
                 ["extension", "add", "--upgrade", "--name", extension, "--yes"], cancellationToken);

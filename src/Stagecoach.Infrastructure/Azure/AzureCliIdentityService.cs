@@ -224,9 +224,16 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
 
     private async Task ConfigureProfileAsync(string directory, CancellationToken cancellationToken)
     {
+        // Every setting here exists to stop the CLI asking a question. Stagecoach runs it hidden with
+        // its input redirected, so any prompt ends the command with "EOF when reading a line":
+        // login_experience_v2 is the account picker, and the dynamic-install pair is the prompt shown
+        // when a command lives in an extension — "az network bastion" among them, which is why
+        // connecting through Bastion failed with no usable error.
         var result = await cli.RunAsync(directory,
             ["config", "set", "core.login_experience_v2=off", "core.collect_telemetry=false",
-             "core.only_show_errors=true", "core.no_color=true"], cancellationToken);
+             "core.only_show_errors=true", "core.no_color=true",
+             "extension.use_dynamic_install=yes_without_prompt",
+             "extension.dynamic_install_allow_preview=false"], cancellationToken);
         if (!result.Succeeded)
         {
             // This is the first write into the isolated profile, so it is where an unwritable or

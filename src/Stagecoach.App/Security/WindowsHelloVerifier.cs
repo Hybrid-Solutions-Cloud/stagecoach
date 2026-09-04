@@ -100,6 +100,21 @@ public sealed class WindowsHelloVerifier(Func<nint> windowHandleProvider)
         UserVerificationResult.RemoteSessionUnavailable or
         UserVerificationResult.Unavailable;
 
+    /// <summary>
+    /// True when Windows could not carry out a check at all, as opposed to carrying one out and
+    /// refusing. The distinction decides whether it is safe to let someone past.
+    /// <para>
+    /// A wrong password is <b>not</b> in this set. Treating "Windows never asked" and "Windows asked
+    /// and said no" as the same thing is how a refused verification quietly became a way in.
+    /// </para>
+    /// </summary>
+    public static bool CouldNotVerify(UserVerificationResult result) => result is
+        UserVerificationResult.NotConfigured or
+        UserVerificationResult.DisabledByPolicy or
+        UserVerificationResult.RemoteSessionUnavailable or
+        UserVerificationResult.Unavailable or
+        UserVerificationResult.CredentialPromptUnavailable;
+
     public static string Describe(UserVerificationResult result) => result switch
     {
         UserVerificationResult.Verified => "Verified.",

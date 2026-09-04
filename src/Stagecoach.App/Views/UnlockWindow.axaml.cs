@@ -186,7 +186,9 @@ public partial class UnlockWindow : Window
     /// </summary>
     private void OfferToContinue(UserVerificationResult result)
     {
-        if (result == UserVerificationResult.Canceled || _continueButton is null) return;
+        // Only when Windows could not carry out a check. Offering this after a wrong password made
+        // the gate worthless: a refusal and an impossibility were being treated identically.
+        if (!WindowsHelloVerifier.CouldNotVerify(result) || _continueButton is null) return;
         _continueButton.Content = $"Continue as {AppOwner.CurrentWindowsAccount().Name}";
         _continueButton.IsVisible = true;
     }
@@ -295,11 +297,12 @@ public partial class UnlockWindow : Window
                 result = await credentials.VerifyAsync("Take ownership of Stagecoach");
             }
 
-            // The same reasoning as continuing past an unverifiable prompt: Windows released the
-            // database key to this account already, so a check it cannot perform must not lock it.
-            if (result == UserVerificationResult.Canceled)
+            // Taking ownership requires Windows to have said yes, or to have been unable to ask at
+            // all. Previously anything other than an outright cancel was accepted — so a wrong
+            // password handed the installation over, which is the opposite of a gate.
+            if (result != UserVerificationResult.Verified && !WindowsHelloVerifier.CouldNotVerify(result))
             {
-                status.Text = "Cancelled.";
+                status.Text = WindowsHelloVerifier.Describe(result);
                 return;
             }
 

@@ -142,6 +142,7 @@ public sealed class ProcessOrchestrator(
         // Bastion support, for one -- was reported as connected while nothing ever appeared.
         await EnsureHelperSurvivedAsync(runtime.Helper, "Bastion RDP", cancellationToken);
 
+
         runtime.Session = runtime.Session with
         {
             State = SessionState.InteractionRequired,
@@ -176,6 +177,12 @@ public sealed class ProcessOrchestrator(
             arguments.Add(relayIdentity.SshPrivateKeyPath);
         }
         runtime.Helper = await cli.StartBackgroundAsync(identity.AzureConfigDirectory, arguments, environment, cancellationToken);
+
+        // Same reasoning as the native Bastion route: nothing here opens a window Stagecoach can
+        // wait for, so a relay that dies on startup — a missing ssh extension, an unreachable Arc
+        // agent, a rejected local user — would otherwise be reported as a live session.
+        await EnsureHelperSurvivedAsync(runtime.Helper, "The Arc RDP relay", cancellationToken);
+
         runtime.Session = runtime.Session with
         {
             State = accessPath.Readiness == ReadinessState.InteractionRequired ? SessionState.InteractionRequired : SessionState.Active,
