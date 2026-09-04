@@ -1,7 +1,9 @@
+using System.Security.Cryptography;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Stagecoach.App.Security;
 using Stagecoach.Core;
+using Stagecoach.Infrastructure.Storage;
 
 namespace Stagecoach.App.Views;
 
@@ -27,10 +29,18 @@ public enum PassphraseRemovalOutcome
 /// </summary>
 public partial class PassphraseRemovalWindow : Window
 {
-    private readonly TaskCompletionSource<(PassphraseRemovalOutcome Outcome, byte[]? Entropy)> _result = new();
+    private readonly TaskCompletionSource<PassphraseRemovalOutcome> _result = new();
     private int _attempts;
 
-    public PassphraseRemovalWindow()
+    public PassphraseRemovalWindow() : this(null) { }
+
+    /// <summary>
+    /// Takes the store so the whole removal — unwrap, rewrap, drop the passphrase from the record —
+    /// happens here as one step. Splitting it across this window and the caller left a gap where a
+    /// crash between the two writes produced a key and a record that disagreed, and the next launch
+    /// could not be recovered from inside the application.
+    /// </summary>
+    public PassphraseRemovalWindow(EncryptedSqliteMetadataStore? store)
     {
         InitializeComponent();
 
@@ -46,9 +56,25 @@ public partial class PassphraseRemovalWindow : Window
             var entropy = AppOwner.TryLegacyPassphrase(passphrase.Text ?? string.Empty);
             if (entropy is not null)
             {
-                _result.TrySetResult((PassphraseRemovalOutcome.Removed, entropy));
-                Close();
-                return;
+                try
+                {
+                    Remove(store, entropy);
+                    _result.TrySetResult(PassphraseRemovalOutcome.Removed);
+                    Close();
+                    return;
+                }
+                catch (CryptographicException exception)
+                {
+                    // The passphrase was right but the key is wrapped with something else, so this
+                    // installation cannot be recovered by typing. Say so, and leave Start fresh.
+                    CrashLog.Record("Passphrase removal", exception);
+                    error.Text =
+                        "That passphrase is correct, but the database key on this machine is protected " +
+                        "with something else and cannot be unwrapped. Use Start fresh — your machines " +
+                        "are rediscovered on the next scan.";
+                    error.IsVisible = true;
+                    return;
+                }
             }
 
             _attempts++;
@@ -62,7 +88,7 @@ public partial class PassphraseRemovalWindow : Window
 
         quit.Click += (_, _) =>
         {
-            _result.TrySetResult((PassphraseRemovalOutcome.Cancelled, null));
+            _result.TrySetResult(PassphraseRemovalOutcome.Cancelled);
             Close();
         };
 
@@ -71,7 +97,7 @@ public partial class PassphraseRemovalWindow : Window
             try
             {
                 LocalState.StartFresh();
-                _result.TrySetResult((PassphraseRemovalOutcome.StartedFresh, null));
+                _result.TrySetResult(PassphraseRemovalOutcome.StartedFresh);
                 Close();
             }
             catch (Exception exception)
@@ -83,10 +109,47 @@ public partial class PassphraseRemovalWindow : Window
         };
 
         Opened += (_, _) => passphrase.Focus();
-        Closed += (_, _) => _result.TrySetResult((PassphraseRemovalOutcome.Cancelled, null));
+        Closed += (_, _) => _result.TrySetResult(PassphraseRemovalOutcome.Cancelled);
     }
 
-    public Task<(PassphraseRemovalOutcome Outcome, byte[]? Entropy)> Result => _result.Task;
+    public Task<PassphraseRemovalOutcome> Result => _result.Task;
+
+    /// <summary>
+    /// Unwraps the key with the passphrase entropy, rewraps it under Windows protection alone, and
+    /// only then drops the passphrase from the record. The record is written last on purpose: if
+    /// this is interrupted, the record still says a passphrase exists, and the next launch finds a
+    /// key that already needs none — which <see cref="TryRemoveWithoutPassphrase"/> then settles.
+    /// </summary>
+    private static void Remove(EncryptedSqliteMetadataStore? store, byte[] entropy)
+    {
+        if (store is not null)
+        {
+            store.UseAdditionalEntropy(entropy);
+            store.RewrapKey(null);
+        }
+
+        AppOwner.CompletePassphraseRemoval();
+    }
+
+    /// <summary>
+    /// Settles an interrupted removal without asking for anything. When the key already opens with
+    /// no entropy, the passphrase was removed and only the record is stale, so it is finished
+    /// silently. Returns false when the key really is still wrapped with a passphrase.
+    /// </summary>
+    public static bool TryRemoveWithoutPassphrase(EncryptedSqliteMetadataStore store)
+    {
+        try
+        {
+            store.UseAdditionalEntropy(null);
+            store.RewrapKey(null);
+            AppOwner.CompletePassphraseRemoval();
+            return true;
+        }
+        catch (CryptographicException)
+        {
+            return false;
+        }
+    }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 }

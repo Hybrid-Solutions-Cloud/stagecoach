@@ -31,9 +31,13 @@ public sealed class WindowsCredentialVerifier(Func<nint> windowHandleProvider)
     {
         if (!OperatingSystem.IsWindows()) return Task.FromResult(UserVerificationResult.Unavailable);
         var handle = windowHandleProvider();
+
+        // Deliberately synchronous on the calling thread, as Vault Prospector does it: the prompt is
+        // a modal Win32 dialog parented to this window, and owning it from another thread makes the
+        // owner-disable and z-order behaviour unreliable. Blocking under a modal is the point.
         return handle == 0
             ? Task.FromResult(UserVerificationResult.Unavailable)
-            : Task.Run(() => Verify(handle, reason));
+            : Task.FromResult(Verify(handle, reason));
     }
 
     private static UserVerificationResult Verify(nint windowHandle, string reason)

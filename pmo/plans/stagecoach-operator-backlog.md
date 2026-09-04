@@ -112,3 +112,10 @@ Azure token caches, since those are machine and user bound by design.
 
 No live connection to a machine has been made — Bastion, Arc RDP-over-SSH, and `TERMSRV` credential
 staging are all unexercised. With discovery fixed in 0.4.1, this is the next thing to validate.
+
+### Known gap: a 0.5.0 `lock.json` is not migrated
+
+The 0.5.0 Settings passphrase lock wrote `lock.json` and rewrapped the key with its own entropy.
+0.6.0 already ignored that file, so such an installation was unopenable before 0.6.1 and no path is
+built for it. **Start fresh** is the way back in; the estate is rediscovered on the next scan. Left
+unbuilt deliberately — the window was one release and there are no known installations in it.

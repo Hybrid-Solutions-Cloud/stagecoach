@@ -85,21 +85,19 @@ public partial class App : Application
                 window.Hide();
 
                 // One-time: an installation from the version that had a passphrase still has its key
-                // wrapped with entropy derived from it, so it has to be given once to unwrap.
-                if (AppOwner.NeedsPassphraseRemoval)
+                // wrapped with entropy derived from it, so it has to be given once to unwrap. Try
+                // without asking first — a removal interrupted partway through leaves a key that
+                // already needs no passphrase and a record that still claims one, and there would be
+                // no way back in if that combination demanded a passphrase the key no longer uses.
+                if (AppOwner.NeedsPassphraseRemoval && !PassphraseRemovalWindow.TryRemoveWithoutPassphrase(store))
                 {
-                    var removal = new PassphraseRemovalWindow { Icon = _icon };
+                    var removal = new PassphraseRemovalWindow(store) { Icon = _icon };
                     removal.Show();
-                    var (outcome, entropy) = await removal.Result;
-                    if (outcome != PassphraseRemovalOutcome.Removed || entropy is null)
+                    if (await removal.Result != PassphraseRemovalOutcome.Removed)
                     {
                         Exit(desktop);
                         return;
                     }
-
-                    store.UseAdditionalEntropy(entropy);
-                    store.RewrapKey(null);
-                    AppOwner.CompletePassphraseRemoval();
                 }
 
                 if (!AppOwner.IsConfigured)

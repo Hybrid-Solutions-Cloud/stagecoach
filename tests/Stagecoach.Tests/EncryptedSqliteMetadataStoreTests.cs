@@ -107,5 +107,14 @@ public sealed class EncryptedSqliteMetadataStoreTests : IAsyncLifetime
         var after = Store;
         await after.InitializeAsync(token);
         Assert.Equal(identity.Id, Assert.Single(await after.GetIdentitiesAsync(token)).Id);
+
+        // And the interrupted case: the key was rewrapped but the owner record was not updated
+        // before the process died. Rewrapping again with no entropy must succeed rather than throw,
+        // which is what lets the next launch finish the removal without asking for anything.
+        var interrupted = Store;
+        interrupted.RewrapKey(null);
+        var settled = Store;
+        await settled.InitializeAsync(token);
+        Assert.Equal(identity.Id, Assert.Single(await settled.GetIdentitiesAsync(token)).Id);
     }
 }

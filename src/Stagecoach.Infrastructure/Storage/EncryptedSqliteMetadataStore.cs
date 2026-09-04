@@ -562,8 +562,8 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
             catch (CryptographicException exception)
             {
                 throw new CryptographicException(
-                    "The Stagecoach metadata key could not be unwrapped. If an unlock passphrase is " +
-                    "configured, the wrong passphrase was supplied.", exception);
+                    "The Stagecoach metadata key could not be unwrapped. It is protected for a " +
+                    "different Windows account, or was wrapped with a passphrase not supplied here.", exception);
             }
 
             if (key.Length != 32) throw new CryptographicException("The Stagecoach metadata key is invalid.");
