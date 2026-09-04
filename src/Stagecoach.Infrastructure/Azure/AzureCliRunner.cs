@@ -15,6 +15,13 @@ public sealed class AzureCliRunner : IAzureCliRunner
     /// </summary>
     public static readonly TimeSpan InteractiveTimeout = TimeSpan.FromMinutes(5);
 
+    /// <summary>
+    /// The ceiling for a command that needs no human. Generous, because installing extensions over a
+    /// slow link is legitimately slow — but finite, because a command with no bound can hold the
+    /// whole application busy indefinitely.
+    /// </summary>
+    public static readonly TimeSpan CommandTimeout = TimeSpan.FromMinutes(10);
+
     public Task<CommandResult> RunAsync(
         string azureConfigDirectory,
         IReadOnlyList<string> arguments,
@@ -73,21 +80,33 @@ public sealed class AzureCliRunner : IAzureCliRunner
         var stderrBuffer = new StringBuilder();
         var stderrTask = PumpAsync(process.StandardError, stderrBuffer, progress, cancellationToken);
 
-        // An interactive sign-in that is never completed used to hang the caller forever, because
-        // the only cancellation source was a token the UI never supplied. Bound it.
+        // Every command is bounded. An interactive sign-in that is never completed used to hang the
+        // caller forever; so did an ordinary command that stalls — "az extension add" waiting on a
+        // network that never answers left one operator's application busy for eight hours, and while
+        // it was busy every other action in the application silently did nothing.
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (interactive) timeout.CancelAfter(InteractiveTimeout);
+        timeout.CancelAfter(interactive ? InteractiveTimeout : CommandTimeout);
 
         try
         {
             await process.WaitForExitAsync(timeout.Token);
         }
         catch (OperationCanceledException) when (
-            interactive && timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             TryKillTree(process);
             await WaitForExitGraceAsync(process);
             var partial = Redact(stderrBuffer.ToString());
+            if (!interactive)
+            {
+                return new CommandResult(
+                    -1,
+                    string.Empty,
+                    string.IsNullOrWhiteSpace(partial)
+                        ? $"The Azure CLI did not respond within {CommandTimeout.TotalMinutes:0} minutes and was stopped."
+                        : partial);
+            }
+
             return new CommandResult(
                 -1,
                 string.Empty,

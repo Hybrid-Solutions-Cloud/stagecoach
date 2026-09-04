@@ -1248,10 +1248,12 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task PrepareWorkstationAsync()
     {
-        await RunBusyAsync("Installing or updating local Azure CLI extensions", async () =>
+        // Takes the cancellation token: this is the operation that hung for eight hours, and it must
+        // be stoppable from the window rather than only by killing the application.
+        await RunBusyAsync("Installing or updating local Azure CLI extensions", async cancellationToken =>
         {
-            await _readiness.PrepareCliExtensionsAsync();
-            var result = await _readiness.InspectAsync();
+            await _readiness.PrepareCliExtensionsAsync(cancellationToken);
+            var result = await _readiness.InspectAsync(cancellationToken);
             _lastReadiness = result;
             WorkstationStatus = result.Actions.Count == 0 ? "Workstation ready" : string.Join("  •  ", result.Actions);
             StatusMessage = "Local Azure CLI prerequisites are ready.";
@@ -1627,14 +1629,37 @@ public partial class MainViewModel : ObservableObject
         HasActionableError = true;
     }
 
-    private async Task RunBusyAsync(string message, Func<Task> operation)
+    private Task RunBusyAsync(string message, Func<Task> operation) =>
+        RunBusyAsync(message, _ => operation());
+
+    /// <summary>
+    /// Runs one operation at a time, and says so when something is already running.
+    /// <para>
+    /// This used to be <c>if (IsBusy) return;</c> — every other command silently did nothing while
+    /// one was in flight. With an Azure CLI call that could never time out, an operator sat for eight
+    /// hours on "Installing or updating local Azure CLI extensions" while every button, the activity
+    /// list and the support bundle quietly refused to work and said nothing at all.
+    /// </para>
+    /// </summary>
+    private async Task RunBusyAsync(string message, Func<CancellationToken, Task> operation)
     {
-        if (IsBusy) return;
+        if (IsBusy)
+        {
+            StatusMessage =
+                $"Still working on \"{BusyMessage}\". Wait for it to finish, or cancel it, then try again.";
+            RaiseError("Something is already running", StatusMessage);
+            return;
+        }
+
         IsBusy = true;
+        BusyMessage = message;
         StatusMessage = message;
+        using var cancellation = new CancellationTokenSource();
+        _busyCancellation = cancellation;
+        OnPropertyChanged(nameof(CanCancelBusy));
         try
         {
-            await operation();
+            await operation(cancellation.Token);
         }
         catch (Exception exception)
         {
@@ -1644,8 +1669,28 @@ public partial class MainViewModel : ObservableObject
         }
         finally
         {
+            _busyCancellation = null;
+            BusyMessage = string.Empty;
             IsBusy = false;
+            OnPropertyChanged(nameof(CanCancelBusy));
         }
+    }
+
+    private CancellationTokenSource? _busyCancellation;
+
+    /// <summary>What is running right now, so a blocked action can name it instead of doing nothing.</summary>
+    [ObservableProperty] private string _busyMessage = string.Empty;
+
+    public bool CanCancelBusy => _busyCancellation is not null;
+
+    /// <summary>Stops whatever is running. Nothing may hold the application indefinitely.</summary>
+    [RelayCommand]
+    private void CancelBusy()
+    {
+        if (_busyCancellation is not { } cancellation) return;
+        StatusMessage = $"Stopping \"{BusyMessage}\"…";
+        try { cancellation.Cancel(); }
+        catch (ObjectDisposedException) { }
     }
 
     internal static string SafeMessage(Exception exception)

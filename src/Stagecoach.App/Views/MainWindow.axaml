@@ -1038,11 +1038,14 @@
 
     <Border Grid.Row="3" Background="{DynamicResource StageColorSurfaceAlt}"
             BorderThickness="0,1,0,0" BorderBrush="{DynamicResource StageColorLine}" Padding="18,9">
-      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12">
         <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
         <TextBlock Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold"
                    Text="{Binding ActiveSessionCount, StringFormat='{}{0} active'}" />
-        <ProgressBar Grid.Column="2" Width="160" IsIndeterminate="{Binding IsBusy}" IsVisible="{Binding IsBusy}" />
+        <!-- Nothing may hold the application indefinitely: whatever is running can be stopped. -->
+        <Button Grid.Column="2" Content="Cancel" Command="{Binding CancelBusyCommand}"
+                IsVisible="{Binding IsBusy}" VerticalAlignment="Center" />
+        <ProgressBar Grid.Column="3" Width="160" IsIndeterminate="{Binding IsBusy}" IsVisible="{Binding IsBusy}" />
       </Grid>
     </Border>
   </Grid>
