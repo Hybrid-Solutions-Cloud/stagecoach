@@ -197,14 +197,19 @@ public partial class UnlockWindow : Window
         try
         {
             var directory = AppOwner.EntraOwnerConfigDirectory;
-            Directory.CreateDirectory(directory);
-
             status.Text = "Signing in…";
-            var login = await _cli.RunInteractiveAsync(
-                directory, ["login", "--allow-no-subscriptions", "--output", "json"]);
-            if (!login.Succeeded)
+
+            // Anything the CLI says goes straight to the screen — that is how a device code reaches
+            // the operator instead of disappearing into a hidden process.
+            var progress = new Progress<string>(line =>
+            {
+                if (!string.IsNullOrWhiteSpace(line)) status.Text = line.Trim();
+            });
+
+            if (!await OwnerEntraSignIn.SignInAsync(_cli, directory, progress))
             {
                 status.Text = "Sign-in did not complete.";
+                ShowSwitchOwner();
                 return;
             }
 
@@ -314,25 +319,9 @@ public partial class UnlockWindow : Window
     /// Whether the owning Entra account is already signed in to its isolated profile. Never
     /// interactive: a failure here simply means a sign-in is needed.
     /// </summary>
-    private async Task<bool> SignedInOwnerAsync(string directory)
-    {
-        try
-        {
-            var account = await _cli.RunAsync(directory, ["account", "show", "--output", "json"]);
-            if (!account.Succeeded || string.IsNullOrWhiteSpace(account.StandardOutput)) return false;
-
-            using var document = System.Text.Json.JsonDocument.Parse(account.StandardOutput);
-            var signedIn = document.RootElement.TryGetProperty("user", out var user) &&
-                           user.TryGetProperty("name", out var name)
-                ? name.GetString() ?? string.Empty
-                : string.Empty;
-            return signedIn.Length > 0 && AppOwner.EntraAccountIsOwner(signedIn);
-        }
-        catch (Exception exception) when (exception is System.Text.Json.JsonException or InvalidOperationException)
-        {
-            return false;
-        }
-    }
+    private async Task<bool> SignedInOwnerAsync(string directory) =>
+        await OwnerEntraSignIn.SignedInAccountAsync(_cli, directory) is { Length: > 0 } signedIn &&
+        AppOwner.EntraAccountIsOwner(signedIn);
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 }

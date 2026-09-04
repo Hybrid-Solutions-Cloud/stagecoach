@@ -45,7 +45,12 @@ public partial class OwnerSetupWindow : Window
             entraText.Text = "Signing in…";
             try
             {
-                _entraUpn = await SignInOwnerAsync();
+                // Surfaces a device code, rather than losing it inside the hidden CLI process.
+                var progress = new Progress<string>(line =>
+                {
+                    if (!string.IsNullOrWhiteSpace(line)) entraText.Text = line.Trim();
+                });
+                _entraUpn = await SignInOwnerAsync(progress);
                 entraText.Text = _entraUpn is null ? "Sign-in did not complete." : _entraUpn;
             }
             catch (Exception exception)
@@ -95,21 +100,11 @@ public partial class OwnerSetupWindow : Window
     /// Signs in to the owning Entra account in its own isolated profile, kept apart from the
     /// connected identities so the two can never be confused for one another.
     /// </summary>
-    private async Task<string?> SignInOwnerAsync()
+    private async Task<string?> SignInOwnerAsync(IProgress<string>? progress = null)
     {
         var directory = AppOwner.EntraOwnerConfigDirectory;
-        Directory.CreateDirectory(directory);
-        var login = await _cli.RunInteractiveAsync(
-            directory, ["login", "--allow-no-subscriptions", "--output", "json"]);
-        if (!login.Succeeded) return null;
-
-        var account = await _cli.RunAsync(directory, ["account", "show", "--output", "json"]);
-        if (!account.Succeeded) return null;
-
-        using var document = System.Text.Json.JsonDocument.Parse(account.StandardOutput);
-        return document.RootElement.TryGetProperty("user", out var user) &&
-               user.TryGetProperty("name", out var name)
-            ? name.GetString()
+        return await OwnerEntraSignIn.SignInAsync(_cli, directory, progress)
+            ? await OwnerEntraSignIn.SignedInAccountAsync(_cli, directory)
             : null;
     }
 
