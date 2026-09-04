@@ -699,6 +699,10 @@
                       Command="{Binding RefreshAuditCommand}" />
             </Grid>
 
+            <TextBlock Text="{Binding AuditStatus}" TextWrapping="Wrap" Margin="0,0,0,4"
+                       Foreground="{DynamicResource StageColorDanger}"
+                       IsVisible="{Binding AuditStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
             <Border Classes="panel" Padding="0">
               <Grid RowDefinitions="Auto,*" MinWidth="720">
                 <Grid Grid.Row="0" ColumnDefinitions="170,110,2*,2*" Margin="8,8,8,6"

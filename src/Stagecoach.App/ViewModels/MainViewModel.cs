@@ -187,6 +187,12 @@ public partial class MainViewModel : ObservableObject
         await RunBusyAsync("Opening encrypted local estate", async () =>
         {
             await _store.InitializeAsync();
+
+            // Recorded before anything else can fail. Putting this after the reloads meant a single
+            // failure anywhere in startup left the Activity page completely empty, which reads as
+            // the log being broken rather than as the thing that actually went wrong.
+            await RecordAsync(AuditCategory.Identity, "Stagecoach opened", $"Version {CurrentVersion}");
+
             var settings = await _settingsStore.LoadAsync();
             SelectedTheme = settings.Theme;
             SelectedAccent = settings.Accent;
@@ -207,13 +213,7 @@ public partial class MainViewModel : ObservableObject
             await ReloadLocalAccountsAsync();
             await ReloadMachinesAsync();
             await ReloadSessionsAsync();
-
-            // Recording the start answers "when was this last used" and means the Activity page is
-            // never blank on a fresh installation, which reads as broken rather than as empty.
-            await RecordAsync(
-                AuditCategory.Identity,
-                "Stagecoach opened",
-                $"{Identities.Count} connected account(s), {Machines.Count} machine(s) cached");
+            await RefreshAuditAsync();
 
             // The machine list is always the landing screen. An operator with no identity yet is
             // told what to do rather than being dropped into a settings surface.
@@ -1162,11 +1162,35 @@ public partial class MainViewModel : ObservableObject
         });
     }
 
+    /// <summary>
+    /// Why the activity list is empty, or empty text when it is not. An empty list with no
+    /// explanation is indistinguishable from a broken one, which is exactly how this looked.
+    /// </summary>
+    [ObservableProperty] private string _auditStatus = string.Empty;
+
+    public bool HasNoAuditEvents => AuditEvents.Count == 0;
+
     [RelayCommand]
     private async Task RefreshAuditAsync()
     {
-        AuditEvents.Clear();
-        foreach (var item in await _store.GetRecentAuditAsync(200)) AuditEvents.Add(new AuditRow(item));
+        try
+        {
+            var events = await _store.GetRecentAuditAsync(200);
+            AuditEvents.Clear();
+            foreach (var item in events) AuditEvents.Add(new AuditRow(item));
+            AuditStatus = AuditEvents.Count == 0
+                ? "Nothing recorded yet. Connecting an account or scanning will appear here."
+                : string.Empty;
+        }
+        catch (Exception exception)
+        {
+            CrashLog.Record("Activity read", exception);
+            AuditStatus = $"The activity log could not be read: {exception.Message}";
+        }
+        finally
+        {
+            OnPropertyChanged(nameof(HasNoAuditEvents));
+        }
     }
 
     /// <summary>Appends one activity entry. Never called with a credential, token, or resource id.</summary>
@@ -1179,7 +1203,10 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception exception)
         {
+            // Never take the caller down over a log entry, but never hide it either: a swallowed
+            // failure here is what made the Activity page look empty instead of broken.
             CrashLog.Record("Audit append", exception);
+            AuditStatus = $"An activity entry could not be saved: {exception.Message}";
         }
     }
 

@@ -215,8 +215,7 @@ public partial class UnlockWindow : Window
 
             if (await SignedInOwnerAsync(directory))
             {
-                _result.TrySetResult(true);
-                Close();
+                await VerifyWindowsAsync(status);
                 return;
             }
 
@@ -245,8 +244,10 @@ public partial class UnlockWindow : Window
             if (AppOwner.CurrentWindowsUserPrincipalName() is { Length: > 0 } windowsUpn &&
                 AppOwner.EntraAccountIsOwner(windowsUpn))
             {
-                _result.TrySetResult(true);
-                Close();
+                // Identity established without a sign-in, but that is not the same as being let in.
+                // The owner account has to actually gate the application, so still ask Windows to
+                // verify the person sitting here.
+                await VerifyWindowsAsync(status);
                 return;
             }
 
@@ -254,8 +255,7 @@ public partial class UnlockWindow : Window
             status.Text = "Checking your sign-in…";
             if (await SignedInOwnerAsync(AppOwner.EntraOwnerConfigDirectory))
             {
-                _result.TrySetResult(true);
-                Close();
+                await VerifyWindowsAsync(status);
                 return;
             }
 
