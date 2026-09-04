@@ -77,11 +77,28 @@ an excluded tenant would still have been queried.
 
 ## Resolved design questions
 
-**G — application sign-in. RESOLVED in 0.5.0** with an optional passphrase lock. Without it, protection is as below. Its data is bound to the
-Windows account: SQLCipher database with a DPAPI `CurrentUser` key, local passwords in Windows
-Credential Manager, Azure tokens in each account's isolated Azure CLI cache. Another Windows user
-cannot read it and the files are useless on another machine — but anyone at an unlocked session can.
-Vault Prospector adds an explicit unlock gate. Whether Stagecoach should is an open product decision.
+**G — application sign-in. RESOLVED in 0.6.1.** An owner account chosen at first run — a Windows
+account or an Entra account — and **no application passphrase at any point**. 0.5.0 added a
+passphrase lock and 0.6.0 made it mandatory; both were wrong, and the operator rejected them
+outright: *"I did not do this for prospector. I am not doing this for this app."*
+
+Vault Prospector was the reference all along and neither version matched it. Prospector's
+`WindowsDataProtectionKeyProvider` protects the database key with DPAPI bound to the Windows account
+and nothing is ever typed; the gate is a presence check —
+`UserConsentVerifier` (Hello), falling through to `CredUIPromptForWindowsCredentials` + `LogonUser`
+with a SID comparison when Hello cannot prompt, which over RDP it never can. Stagecoach now does the
+same, with an Entra sign-in as the equivalent gate for an Entra owner.
+
+Protection is therefore: SQLCipher database with a DPAPI `CurrentUser` key, local passwords in
+Windows Credential Manager, Azure tokens in each account's isolated Azure CLI cache — unreadable by
+another Windows user, useless on another machine — plus a presence check before the window opens.
+
+### Bug: the Settings passphrase lock would have bricked the database — Fixed, 0.6.1
+
+`AppLock.Enable` rewrapped the metadata key with entropy derived from its own passphrase, but after
+0.6.0 startup only ever supplied `AppOwner`'s entropy. Enabling the Settings lock would have made
+the key impossible to unwrap on the next launch. Found while removing the passphrase; `AppLock` is
+deleted rather than repaired.
 
 **E — audit log. DELIVERED in 0.5.0** on the Activity page. Covers: scan start and finish per identity, counts discovered, errors, and
 connection attempts. Deliberately excludes credentials and tokens. Home is likely a new page rather

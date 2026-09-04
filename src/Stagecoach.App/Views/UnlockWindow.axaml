@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Stagecoach.App.Views.UnlockWindow"
         Title="Unlock Stagecoach"
-        Width="560" Height="440" MinWidth="330" MinHeight="300"
+        Width="560" Height="420" MinWidth="330" MinHeight="300"
         WindowStartupLocation="CenterScreen">
   <Grid RowDefinitions="Auto,*" Background="{DynamicResource StageColorCanvas}">
     <Border Grid.Row="0" Background="{DynamicResource StageColorHeader}" Padding="20,14">
@@ -20,7 +20,7 @@
     </Border>
 
     <ScrollViewer Grid.Row="1">
-      <StackPanel Margin="26,20" Spacing="12">
+      <StackPanel Margin="26,20" Spacing="14">
         <StackPanel Spacing="4">
           <TextBlock Classes="screen-eyebrow" Text="SECURE UNLOCK" />
           <TextBlock x:Name="OwnerText" FontSize="{StaticResource StageFontSize20}" FontWeight="SemiBold"
@@ -29,25 +29,20 @@
                      FontSize="{StaticResource StageFontSize12}" TextWrapping="Wrap" />
         </StackPanel>
 
-        <StackPanel x:Name="VerifyPanel" Spacing="8">
-          <Button x:Name="VerifyButton" Classes="primary" Content="Verify with Windows Hello"
-                  HorizontalAlignment="Stretch" />
+        <StackPanel Spacing="10">
+          <Button x:Name="VerifyButton" Classes="primary" Content="Verify with Windows"
+                  HorizontalAlignment="Stretch" IsDefault="True" />
           <TextBlock x:Name="VerifyStatus" TextWrapping="Wrap"
                      Foreground="{DynamicResource StageColorMuted}" IsVisible="False" />
         </StackPanel>
 
-        <StackPanel Spacing="6">
-          <TextBlock Classes="field-label" Text="Passphrase" />
-          <TextBox x:Name="PassphraseBox" PasswordChar="●" MinHeight="38"
-                   AutomationProperties.Name="Unlock passphrase" />
-          <TextBlock x:Name="ErrorText" Foreground="{DynamicResource StageColorDanger}"
-                     TextWrapping="Wrap" IsVisible="False" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="QuitButton" Content="Quit" />
+          <Button x:Name="ResetButton" Content="Start fresh" />
         </StackPanel>
 
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <Button x:Name="UnlockButton" Classes="primary" Content="Unlock" IsDefault="True" />
-          <Button x:Name="QuitButton" Content="Quit" />
-        </StackPanel>
+        <TextBlock FontSize="{StaticResource StageFontSize11}" Opacity="0.7" TextWrapping="Wrap"
+                   Text="Start fresh removes the local estate and the owner on this machine so setup can run again. Nothing in Azure is changed." />
       </StackPanel>
     </ScrollViewer>
   </Grid>

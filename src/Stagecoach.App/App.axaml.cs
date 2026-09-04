@@ -78,42 +78,53 @@ public partial class App : Application
 
             window.Opened += async (_, _) =>
             {
-                // Ownership is settled before anything reads the database, because the passphrase
-                // chosen here is what wraps its key. First run configures the owner; every later
-                // start verifies it. Quitting either leaves the estate unread.
-                if (!AppOwner.IsConfigured)
+                // Ownership is settled before anything reads the database. First run configures the
+                // owner; every later start verifies it. Quitting either leaves the estate unread.
+                // Nothing here is a secret Stagecoach invented — the database is protected by
+                // Windows for the owning account, and this is the presence check on top of it.
+                window.Hide();
+
+                // One-time: an installation from the version that had a passphrase still has its key
+                // wrapped with entropy derived from it, so it has to be given once to unwrap.
+                if (AppOwner.NeedsPassphraseRemoval)
                 {
-                    var setup = new OwnerSetupWindow(cli) { Icon = _icon };
-                    window.Hide();
-                    setup.Show();
-                    var entropy = await setup.Result;
-                    if (entropy is null)
+                    var removal = new PassphraseRemovalWindow { Icon = _icon };
+                    removal.Show();
+                    var (outcome, entropy) = await removal.Result;
+                    if (outcome != PassphraseRemovalOutcome.Removed || entropy is null)
                     {
                         Exit(desktop);
                         return;
                     }
 
                     store.UseAdditionalEntropy(entropy);
-                    store.RewrapKey(entropy);
-                    window.Show();
-                    window.Activate();
+                    store.RewrapKey(null);
+                    AppOwner.CompletePassphraseRemoval();
+                }
+
+                if (!AppOwner.IsConfigured)
+                {
+                    var setup = new OwnerSetupWindow(cli) { Icon = _icon };
+                    setup.Show();
+                    if (!await setup.Result)
+                    {
+                        Exit(desktop);
+                        return;
+                    }
                 }
                 else
                 {
                     var unlock = new UnlockWindow(cli) { Icon = _icon };
-                    window.Hide();
                     unlock.Show();
-                    var entropy = await unlock.Result;
-                    if (entropy is null)
+                    if (!await unlock.Result)
                     {
                         Exit(desktop);
                         return;
                     }
-
-                    store.UseAdditionalEntropy(entropy);
-                    window.Show();
-                    window.Activate();
                 }
+
+                window.Show();
+                window.Activate();
 
                 await viewModel.InitializeAsync();
                 ApplyTheme(viewModel.SelectedTheme);

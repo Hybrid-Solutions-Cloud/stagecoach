@@ -817,22 +817,10 @@
 
             <Border Classes="panel">
               <StackPanel Spacing="10">
-                <TextBlock Classes="section-title" Text="Lock Stagecoach with a passphrase" />
-                <TextBlock Text="{Binding LockStatus}" TextWrapping="Wrap" />
+                <TextBlock Classes="section-title" Text="Who owns this installation" />
+                <TextBlock Text="{Binding OwnerStatus}" TextWrapping="Wrap" />
                 <TextBlock TextWrapping="Wrap" Opacity="0.75" FontSize="{StaticResource StageFontSize11}"
-                           Text="The passphrase is never stored and cannot be recovered. It is mixed into the Windows protection of the database key, so it is required to read the estate at all, not merely to open the window. If it is lost, the local state folder must be deleted and the accounts connected again." />
-                <StackPanel IsVisible="{Binding !IsLockEnabled}" Spacing="8">
-                  <TextBox Text="{Binding LockPassphrase}" PasswordChar="●"
-                           PlaceholderText="Passphrase, at least 8 characters"
-                           AutomationProperties.Name="New unlock passphrase" />
-                  <TextBox Text="{Binding LockPassphraseConfirm}" PasswordChar="●"
-                           PlaceholderText="Confirm passphrase"
-                           AutomationProperties.Name="Confirm unlock passphrase" />
-                  <Button Classes="primary" Content="Set passphrase" Command="{Binding EnableLockCommand}"
-                          HorizontalAlignment="Left" />
-                </StackPanel>
-                <Button IsVisible="{Binding IsLockEnabled}" Content="Remove passphrase"
-                        Command="{Binding DisableLockCommand}" HorizontalAlignment="Left" />
+                           Text="There is no Stagecoach passphrase. The local database is encrypted with a key protected by Windows for this Windows account, so it cannot be read by another account or moved to another machine, and opening Stagecoach requires a presence check first." />
               </StackPanel>
             </Border>
 

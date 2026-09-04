@@ -11,6 +11,12 @@ public enum UserVerificationResult
     DisabledByPolicy,
     RemoteSessionUnavailable,
     Unavailable,
+
+    /// <summary>Windows would not show the credential prompt at all.</summary>
+    CredentialPromptUnavailable,
+
+    /// <summary>The credentials entered were wrong, or belonged to a different Windows account.</summary>
+    CredentialCheckFailed,
 }
 
 /// <summary>
@@ -84,18 +90,32 @@ public sealed class WindowsHelloVerifier(Func<nint> windowHandleProvider)
         }
     }
 
+    /// <summary>
+    /// True when Hello could not prompt for a reason that is nothing to do with the operator, so the
+    /// Windows credential prompt should be tried instead of reporting a failure.
+    /// </summary>
+    public static bool ShouldFallBackToCredentials(UserVerificationResult result) => result is
+        UserVerificationResult.NotConfigured or
+        UserVerificationResult.DisabledByPolicy or
+        UserVerificationResult.RemoteSessionUnavailable or
+        UserVerificationResult.Unavailable;
+
     public static string Describe(UserVerificationResult result) => result switch
     {
         UserVerificationResult.Verified => "Verified.",
-        UserVerificationResult.Canceled => "Sign-in was cancelled.",
+        UserVerificationResult.Canceled => "Verification was cancelled.",
         UserVerificationResult.NotConfigured =>
-            "Windows Hello is not set up for this account. Use the passphrase instead, or enrol Hello in Windows Settings.",
+            "Windows Hello is not set up for this account. Asking Windows for your password instead…",
         UserVerificationResult.DisabledByPolicy =>
-            "Windows Hello is disabled by policy on this machine. Use the passphrase instead.",
+            "Windows Hello is disabled by policy on this machine. Asking Windows for your password instead…",
         UserVerificationResult.RemoteSessionUnavailable =>
-            "Windows Hello cannot prompt inside a remote session. Use the passphrase instead.",
+            "Windows Hello cannot prompt inside a remote session. Asking Windows for your password instead…",
         UserVerificationResult.Unavailable =>
-            "Windows Hello is unavailable on this machine. Use the passphrase instead.",
+            "Windows Hello is unavailable on this machine. Asking Windows for your password instead…",
+        UserVerificationResult.CredentialPromptUnavailable =>
+            "Windows would not show a sign-in prompt. Sign out and back in, then try again.",
+        UserVerificationResult.CredentialCheckFailed =>
+            "Those credentials are not the Windows account signed in on this machine.",
         _ => "Windows could not verify you.",
     };
 }

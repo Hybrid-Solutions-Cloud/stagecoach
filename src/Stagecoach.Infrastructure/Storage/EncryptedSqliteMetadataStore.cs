@@ -514,9 +514,10 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
     }
 
     /// <summary>
-    /// Extra entropy mixed into the DPAPI protection of the metadata key. When an unlock passphrase
-    /// is configured this carries a value derived from it, so the key cannot be unwrapped by the
-    /// Windows account alone — being at an unlocked session is then not enough to read the estate.
+    /// Extra entropy mixed into the DPAPI protection of the metadata key. Empty in normal operation:
+    /// Stagecoach has no application passphrase, and the key is protected by Windows for the owning
+    /// account alone. It carries a value only while removing the passphrase an older version set, so
+    /// that key can be unwrapped once and rewrapped without it.
     /// </summary>
     private byte[] _additionalEntropy = [];
 
@@ -526,7 +527,7 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         _keyHex = null;
     }
 
-    /// <summary>Re-wraps the existing key under new entropy, for enabling, changing, or removing the lock.</summary>
+    /// <summary>Re-wraps the existing key under new entropy. Used to remove an older version's passphrase.</summary>
     public void RewrapKey(byte[]? newEntropy)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Stagecoach metadata protection requires Windows.");

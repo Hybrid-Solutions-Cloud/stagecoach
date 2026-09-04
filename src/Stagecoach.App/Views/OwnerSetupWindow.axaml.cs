@@ -6,12 +6,13 @@ using Stagecoach.Core;
 namespace Stagecoach.App.Views;
 
 /// <summary>
-/// First-run setup: choose the account that owns this installation and set the passphrase that
-/// protects its database. Runs before anything reads the store.
+/// First-run setup: choose the account that owns this installation. Runs before anything reads the
+/// store. Nothing is typed here — the choice is a Windows account or an Entra account, and the
+/// database is protected by Windows for that account either way.
 /// </summary>
 public partial class OwnerSetupWindow : Window
 {
-    private readonly TaskCompletionSource<byte[]?> _result = new();
+    private readonly TaskCompletionSource<bool> _result = new();
     private readonly IAzureCliRunner _cli;
     private string? _entraUpn;
 
@@ -27,8 +28,6 @@ public partial class OwnerSetupWindow : Window
         var windowsText = this.FindControl<TextBlock>("WindowsAccountText")!;
         var entraText = this.FindControl<TextBlock>("EntraAccountText")!;
         var entraSignIn = this.FindControl<Button>("EntraSignInButton")!;
-        var passphrase = this.FindControl<TextBox>("PassphraseBox")!;
-        var confirm = this.FindControl<TextBox>("ConfirmBox")!;
         var error = this.FindControl<TextBlock>("ErrorText")!;
         var finish = this.FindControl<Button>("FinishButton")!;
         var quit = this.FindControl<Button>("QuitButton")!;
@@ -59,22 +58,14 @@ public partial class OwnerSetupWindow : Window
         {
             error.IsVisible = false;
             var kind = entraChoice.IsChecked == true ? AppOwnerKind.EntraAccount : AppOwnerKind.WindowsAccount;
-            var secret = passphrase.Text ?? string.Empty;
-
-            if (!string.Equals(secret, confirm.Text ?? string.Empty, StringComparison.Ordinal))
-            {
-                Fail(error, "The two passphrases do not match.");
-                return;
-            }
 
             try
             {
-                var entropy = AppOwner.Configure(
+                AppOwner.Configure(
                     kind,
                     kind == AppOwnerKind.EntraAccount ? _entraUpn ?? string.Empty : AppOwner.CurrentWindowsAccount().Name,
-                    secret,
                     _entraUpn);
-                _result.TrySetResult(entropy);
+                _result.TrySetResult(true);
                 Close();
             }
             catch (InvalidOperationException exception)
@@ -85,15 +76,15 @@ public partial class OwnerSetupWindow : Window
 
         quit.Click += (_, _) =>
         {
-            _result.TrySetResult(null);
+            _result.TrySetResult(false);
             Close();
         };
 
-        Opened += (_, _) => { windowsChoice.IsChecked = true; passphrase.Focus(); };
-        Closed += (_, _) => _result.TrySetResult(null);
+        Opened += (_, _) => windowsChoice.IsChecked = true;
+        Closed += (_, _) => _result.TrySetResult(false);
     }
 
-    public Task<byte[]?> Result => _result.Task;
+    public Task<bool> Result => _result.Task;
 
     /// <summary>
     /// Signs in to the owning Entra account in its own isolated profile, kept apart from the

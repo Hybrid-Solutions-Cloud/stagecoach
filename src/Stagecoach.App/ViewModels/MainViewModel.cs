@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Stagecoach.App.Security;
 using Stagecoach.Core;
 using Stagecoach.Infrastructure;
 using Stagecoach.Infrastructure.Storage;
@@ -1076,54 +1077,21 @@ public partial class MainViewModel : ObservableObject
 
     public ObservableCollection<AuditRow> AuditEvents { get; } = [];
 
-    public bool IsLockEnabled => AppLock.IsEnabled;
-    public string LockStatus => AppLock.IsEnabled
-        ? "Stagecoach asks for a passphrase at startup, and that passphrase protects the database key."
-        : "No passphrase is set. Anyone at your unlocked Windows session can open Stagecoach.";
+    /// <summary>
+    /// How this installation is secured. Read-only: it is chosen once at first run and there is no
+    /// passphrase to set here — the database is protected by Windows for the owning account.
+    /// </summary>
+    public string OwnerStatus => AppOwner.Current switch
+    {
+        { Kind: AppOwnerKind.EntraAccount } owner =>
+            $"Owned by {owner.EntraUserPrincipalName}. Opening Stagecoach signs in to that Entra account.",
+        { Kind: AppOwnerKind.WindowsAccount } owner =>
+            $"Owned by {owner.DisplayName}. Opening Stagecoach verifies you with Windows Hello, " +
+            "or your Windows password where Hello cannot prompt.",
+        _ => "No owner is configured. Restart Stagecoach to run first-time setup.",
+    };
 
-    [ObservableProperty] private string _lockPassphrase = string.Empty;
-    [ObservableProperty] private string _lockPassphraseConfirm = string.Empty;
     [ObservableProperty] private string _portablePath = string.Empty;
-
-    [RelayCommand]
-    private async Task EnableLockAsync()
-    {
-        if (!string.Equals(LockPassphrase, LockPassphraseConfirm, StringComparison.Ordinal))
-        {
-            StatusMessage = "The two passphrases do not match.";
-            RaiseError("Passphrases do not match", StatusMessage);
-            return;
-        }
-
-        var passphrase = LockPassphrase;
-        await RunBusyAsync("Setting the unlock passphrase", async () =>
-        {
-            AppLock.ValidatePassphrase(passphrase);
-            var entropy = AppLock.Enable(passphrase);
-            // Re-wrap the existing key so the passphrase is genuinely required from now on, rather
-            // than the gate being a window that could be bypassed by reading the files directly.
-            if (_store is EncryptedSqliteMetadataStore store) store.RewrapKey(entropy);
-            LockPassphrase = LockPassphraseConfirm = string.Empty;
-            await RecordAsync(AuditCategory.Identity, "Unlock passphrase enabled");
-            OnPropertyChanged(nameof(IsLockEnabled));
-            OnPropertyChanged(nameof(LockStatus));
-            StatusMessage = "Unlock passphrase set. It is required the next time Stagecoach starts.";
-        });
-    }
-
-    [RelayCommand]
-    private async Task DisableLockAsync()
-    {
-        await RunBusyAsync("Removing the unlock passphrase", async () =>
-        {
-            if (_store is EncryptedSqliteMetadataStore store) store.RewrapKey(null);
-            AppLock.Disable();
-            await RecordAsync(AuditCategory.Identity, "Unlock passphrase removed");
-            OnPropertyChanged(nameof(IsLockEnabled));
-            OnPropertyChanged(nameof(LockStatus));
-            StatusMessage = "Unlock passphrase removed. Stagecoach is protected by your Windows sign-in only.";
-        });
-    }
 
     [RelayCommand]
     private async Task ExportSettingsAsync()

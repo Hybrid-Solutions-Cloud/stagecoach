@@ -71,4 +71,41 @@ public sealed class EncryptedSqliteMetadataStoreTests : IAsyncLifetime
         await store.UpsertDiscoveryAsync(new DiscoveryResult(second.Id, [], DateTimeOffset.UtcNow, []), token);
         Assert.Empty(await store.GetMachinesAsync(token));
     }
+
+    /// <summary>
+    /// The one-time removal of the passphrase Stagecoach used to require. An existing installation
+    /// has its key wrapped with entropy derived from that passphrase; removing it must unwrap once
+    /// and rewrap under Windows protection alone, leaving the estate readable with nothing typed.
+    /// Getting this wrong locks an operator out of their own data on update, so it is tested.
+    /// </summary>
+    [Fact]
+    public async Task RemovingTheLegacyPassphraseLeavesTheEstateReadable()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Metadata protection is Windows-only.");
+        var token = TestContext.Current.CancellationToken;
+        var identity = new AzureIdentityProfile(
+            Guid.NewGuid(), "Lab", "operator@example.com", "C:\\isolated", AuthenticationState.Ready, DateTimeOffset.UtcNow);
+
+        // An installation as it exists today: the key is wrapped with passphrase-derived entropy.
+        var passphraseEntropy = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        var original = Store;
+        await original.InitializeAsync(token);
+        await original.UpsertIdentityAsync(identity, token);
+        original.RewrapKey(passphraseEntropy);
+
+        // Without that entropy the key cannot be unwrapped at all — which is exactly why the
+        // passphrase has to be given one final time rather than simply dropped.
+        var withoutEntropy = Store;
+        await Assert.ThrowsAnyAsync<Exception>(async () => await withoutEntropy.InitializeAsync(token));
+
+        // The removal itself.
+        var migrating = Store;
+        migrating.UseAdditionalEntropy(passphraseEntropy);
+        migrating.RewrapKey(null);
+
+        // A later start, with nothing supplied, opens the same estate.
+        var after = Store;
+        await after.InitializeAsync(token);
+        Assert.Equal(identity.Id, Assert.Single(await after.GetIdentitiesAsync(token)).Id);
+    }
 }

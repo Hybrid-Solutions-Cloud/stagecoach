@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Stagecoach.App.Views.PassphraseRemovalWindow"
+        Title="Remove the Stagecoach passphrase"
+        Width="560" Height="430" MinWidth="330" MinHeight="300"
+        WindowStartupLocation="CenterScreen">
+  <Grid RowDefinitions="Auto,*" Background="{DynamicResource StageColorCanvas}">
+    <Border Grid.Row="0" Background="{DynamicResource StageColorHeader}" Padding="20,14">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Border Width="38" Height="38" Background="{DynamicResource StagecoachAccentBrush}">
+          <TextBlock Text="S" FontSize="21" FontWeight="Bold" Foreground="White"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="Stagecoach" Foreground="White"
+                     FontSize="{StaticResource StageFontSize18}" FontWeight="SemiBold" />
+          <TextBlock Text="One-time change" Foreground="#AEB9B5" FontSize="{StaticResource StageFontSize11}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="26,20" Spacing="14">
+        <StackPanel Spacing="5">
+          <TextBlock Classes="screen-eyebrow" Text="THE PASSPHRASE IS GOING AWAY" />
+          <TextBlock Text="Enter it once more to remove it" FontSize="{StaticResource StageFontSize20}"
+                     FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Classes="screen-description" FontSize="{StaticResource StageFontSize12}" TextWrapping="Wrap"
+                     Text="Stagecoach no longer asks for a passphrase. Your database key is currently protected with the one you set, so it has to be entered a final time to unlock the key and protect it with Windows alone. You will not be asked again." />
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+          <TextBlock Classes="field-label" Text="Current passphrase" />
+          <TextBox x:Name="PassphraseBox" PasswordChar="●" MinHeight="38"
+                   AutomationProperties.Name="Current passphrase" />
+          <TextBlock x:Name="ErrorText" Foreground="{DynamicResource StageColorDanger}"
+                     TextWrapping="Wrap" IsVisible="False" />
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="ContinueButton" Classes="primary" Content="Remove passphrase" IsDefault="True" />
+          <Button x:Name="QuitButton" Content="Quit" />
+          <Button x:Name="ResetButton" Content="Start fresh" />
+        </StackPanel>
+
+        <TextBlock FontSize="{StaticResource StageFontSize11}" Opacity="0.7" TextWrapping="Wrap"
+                   Text="If the passphrase is lost, Start fresh removes the local estate so setup can run again. Nothing in Azure is changed and your machines are rediscovered on the next scan." />
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</Window>
