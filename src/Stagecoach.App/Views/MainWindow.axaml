@@ -32,6 +32,9 @@
               <TextBlock Text="READ-ONLY DISCOVERY · LOCAL STATE" Foreground="#E7ECEA"
                          FontSize="{StaticResource StageFontSize11}" FontWeight="SemiBold" />
             </Border>
+            <Button Classes="header-action" Content="⚡  Quick connect"
+                    Command="{Binding OpenQuickConnectCommand}" IsEnabled="{Binding !IsBusy}"
+                    AutomationProperties.Name="Connect to a machine once without saving anything" />
             <Button Classes="header-action" Content="↻  Sync estate"
                     Command="{Binding SyncEstateCommand}" IsEnabled="{Binding !IsBusy}"
                     AutomationProperties.Name="Sync the Azure estate" />
@@ -675,6 +678,54 @@
       </TabItem>
 
       <!-- ============================================================ SETTINGS -->
+      <TabItem Header="⌸  Activity">
+        <ScrollViewer>
+          <StackPanel Margin="30,24,30,20" Spacing="14">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="screen-eyebrow" Text="AUDIT TRAIL" />
+                <TextBlock Classes="screen-title" Text="Activity" />
+                <TextBlock Classes="screen-description"
+                           Text="What Stagecoach did and when: scans and what they found, connections, and changes to accounts and scope. Held in the encrypted local database, and never containing passwords, tokens, or resource identifiers." />
+              </StackPanel>
+              <Button Grid.Column="1" Content="↻  Refresh" VerticalAlignment="Center"
+                      Command="{Binding RefreshAuditCommand}" />
+            </Grid>
+
+            <Border Classes="panel" Padding="0">
+              <Grid RowDefinitions="Auto,*" MinWidth="720">
+                <Grid Grid.Row="0" ColumnDefinitions="170,110,2*,2*" Margin="8,8,8,6"
+                      Background="{DynamicResource StageColorSurfaceAlt}">
+                  <TextBlock Classes="column-header" Text="WHEN" Margin="6,8" />
+                  <TextBlock Grid.Column="1" Classes="column-header" Text="AREA" Margin="6,8" />
+                  <TextBlock Grid.Column="2" Classes="column-header" Text="ACTION" Margin="6,8" />
+                  <TextBlock Grid.Column="3" Classes="column-header" Text="DETAIL" Margin="6,8" />
+                </Grid>
+                <ListBox Grid.Row="1" Classes="estate-list" ItemsSource="{Binding AuditEvents}"
+                         MinHeight="160" MaxHeight="520"
+                         ScrollViewer.VerticalScrollBarVisibility="Visible"
+                         AutomationProperties.Name="Activity log">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:AuditRow">
+                      <Grid ColumnDefinitions="170,110,2*,2*" Margin="6,6">
+                        <TextBlock Text="{Binding When}" Margin="6,0" FontFamily="Consolas"
+                                   Foreground="{DynamicResource StageColorMuted}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Category}" Margin="6,0"
+                                   Foreground="{DynamicResource StageColorMuted}" />
+                        <TextBlock Grid.Column="2" Text="{Binding Summary}" Margin="6,0"
+                                   Foreground="{DynamicResource StageColorInk}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="3" Text="{Binding Detail}" Margin="6,0"
+                                   Foreground="{DynamicResource StageColorMuted}" TextWrapping="Wrap" />
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </Grid>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
       <TabItem Header="⚙  Settings">
         <ScrollViewer>
           <StackPanel Margin="30,24,30,20" Spacing="14" MaxWidth="820" HorizontalAlignment="Left">
@@ -758,6 +809,41 @@
             </Border>
 
             <Border Classes="panel">
+              <StackPanel Spacing="10">
+                <TextBlock Classes="section-title" Text="Lock Stagecoach with a passphrase" />
+                <TextBlock Text="{Binding LockStatus}" TextWrapping="Wrap" />
+                <TextBlock TextWrapping="Wrap" Opacity="0.75" FontSize="{StaticResource StageFontSize11}"
+                           Text="The passphrase is never stored and cannot be recovered. It is mixed into the Windows protection of the database key, so it is required to read the estate at all, not merely to open the window. If it is lost, the local state folder must be deleted and the accounts connected again." />
+                <StackPanel IsVisible="{Binding !IsLockEnabled}" Spacing="8">
+                  <TextBox Text="{Binding LockPassphrase}" PasswordChar="●"
+                           PlaceholderText="Passphrase, at least 8 characters"
+                           AutomationProperties.Name="New unlock passphrase" />
+                  <TextBox Text="{Binding LockPassphraseConfirm}" PasswordChar="●"
+                           PlaceholderText="Confirm passphrase"
+                           AutomationProperties.Name="Confirm unlock passphrase" />
+                  <Button Classes="primary" Content="Set passphrase" Command="{Binding EnableLockCommand}"
+                          HorizontalAlignment="Left" />
+                </StackPanel>
+                <Button IsVisible="{Binding IsLockEnabled}" Content="Remove passphrase"
+                        Command="{Binding DisableLockCommand}" HorizontalAlignment="Left" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="panel">
+              <StackPanel Spacing="10">
+                <TextBlock Classes="section-title" Text="Move settings to another machine" />
+                <TextBlock TextWrapping="Wrap" Opacity="0.85"
+                           Text="Exports your local account definitions, which account is pinned to which machine, and your preferences. Passwords, Azure tokens, and the database key are never included — they are tied to this Windows account and this machine deliberately. After importing, enter each password once and sign the Entra accounts in again." />
+                <TextBox Text="{Binding PortablePath}" PlaceholderText="Path to a settings export file"
+                         AutomationProperties.Name="Settings export path" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Classes="primary" Content="Export settings" Command="{Binding ExportSettingsCommand}" />
+                  <Button Content="Import from path" Command="{Binding ImportSettingsCommand}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="panel">
               <StackPanel Spacing="8">
                 <TextBlock Classes="section-title" Text="Workstation readiness" />
                 <TextBlock Text="{Binding WorkstationStatus}" TextWrapping="Wrap" />
@@ -770,7 +856,169 @@
           </StackPanel>
         </ScrollViewer>
       </TabItem>
+
+      <!-- ============================================================ ABOUT -->
+      <TabItem Header="ⓘ  About">
+        <ScrollViewer>
+          <StackPanel Margin="30,24,30,20" Spacing="14" MaxWidth="820" HorizontalAlignment="Left">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="screen-eyebrow" Text="ABOUT" />
+              <TextBlock Classes="screen-title" Text="Stagecoach" />
+              <TextBlock Classes="screen-description"
+                         Text="One identity hub. Every reachable machine. One click. A native Windows launcher for RDP and SSH to Azure VMs behind Bastion, Azure Arc-enabled servers, and Azure Local machines." />
+            </StackPanel>
+
+            <Border Classes="panel">
+              <StackPanel Spacing="8">
+                <TextBlock Text="{Binding CurrentVersion, StringFormat='Installed version  {0}'}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding UpdateStatus}" TextWrapping="Wrap" Opacity="0.8" />
+                <Button Content="Check for updates" Command="{Binding CheckForUpdateCommand}" HorizontalAlignment="Left" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="panel">
+              <StackPanel Spacing="10">
+                <TextBlock Classes="section-title" Text="Documentation and releases" />
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Documentation" FontWeight="SemiBold" />
+                  <SelectableTextBlock Text="https://labs.hybridsolutions.cloud/stagecoach/"
+                                       Foreground="{DynamicResource StageColorAccentStrong}" />
+                </StackPanel>
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Release notes and downloads" FontWeight="SemiBold" />
+                  <SelectableTextBlock Text="https://github.com/Hybrid-Solutions-Cloud/stagecoach/releases"
+                                       Foreground="{DynamicResource StageColorAccentStrong}" />
+                </StackPanel>
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Roadmap" FontWeight="SemiBold" />
+                  <SelectableTextBlock Text="https://labs.hybridsolutions.cloud/stagecoach/about/roadmap.html"
+                                       Foreground="{DynamicResource StageColorAccentStrong}" />
+                </StackPanel>
+                <StackPanel Spacing="3">
+                  <TextBlock Text="Report a problem" FontWeight="SemiBold" />
+                  <SelectableTextBlock Text="https://github.com/Hybrid-Solutions-Cloud/stagecoach/issues"
+                                       Foreground="{DynamicResource StageColorAccentStrong}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="panel">
+              <StackPanel Spacing="10">
+                <TextBlock Classes="section-title" Text="Get support" />
+                <TextBlock TextWrapping="Wrap"
+                           Text="Create a support bundle and attach it to your report. It carries the error log, an environment summary, and a file listing — and no passwords, tokens, or estate data." />
+                <TextBlock Text="{Binding SupportBundleStatus}" TextWrapping="Wrap" Opacity="0.8" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Classes="primary" Content="Create support bundle" Command="{Binding CreateSupportBundleCommand}" />
+                  <Button Content="Open support folder" Command="{Binding OpenSupportFolderCommand}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Classes="panel">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="section-title" Text="Licence" />
+                <TextBlock TextWrapping="Wrap" Opacity="0.85"
+                           Text="MIT. Copyright 2026 Kristopher Turner / Hybrid Cloud Solutions." />
+                <TextBlock TextWrapping="Wrap" Opacity="0.75" FontSize="{StaticResource StageFontSize11}"
+                           Text="Stagecoach uses the Azure access you already hold and grants none. Azure discovery is read-only; the only write it performs is an Arc OpenSSH deployment you explicitly approve." />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
     </TabControl>
+
+    <!-- Quick connect. Deliberately a throwaway path: nothing here is written to the store, so no
+         identity, pin, scope selection, or estate row survives it. -->
+    <Border Grid.Row="2" IsVisible="{Binding IsQuickConnectOpen}" Background="#B325231F">
+      <Border Classes="panel" MaxWidth="720" MaxHeight="640" VerticalAlignment="Center" HorizontalAlignment="Center">
+        <ScrollViewer>
+          <StackPanel Spacing="12">
+            <StackPanel Spacing="4">
+              <TextBlock Classes="screen-eyebrow" Text="QUICK CONNECT" />
+              <TextBlock Text="Reach a machine once" FontSize="{StaticResource StageFontSize20}" FontWeight="SemiBold" />
+              <TextBlock TextWrapping="Wrap" Opacity="0.8" FontSize="{StaticResource StageFontSize12}"
+                         Text="Nothing is saved: no account, no pin, no scope, no estate entry. Leave the subscription or the name empty to search wider." />
+            </StackPanel>
+
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="field-label" Text="Account" />
+                <ComboBox HorizontalAlignment="Stretch" MinHeight="36"
+                          ItemsSource="{Binding Identities}" SelectedItem="{Binding QuickIdentity}"
+                          AutomationProperties.Name="Entra account" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" Spacing="4">
+                <TextBlock Classes="field-label" Text="Tenant" />
+                <ComboBox HorizontalAlignment="Stretch" MinHeight="36"
+                          ItemsSource="{Binding QuickTenants}" SelectedItem="{Binding QuickTenant}"
+                          AutomationProperties.Name="Tenant" />
+              </StackPanel>
+
+              <StackPanel Grid.Row="1" Spacing="4">
+                <TextBlock Classes="field-label" Text="Subscription — optional" />
+                <ComboBox HorizontalAlignment="Stretch" MinHeight="36"
+                          ItemsSource="{Binding QuickSubscriptions}" SelectedItem="{Binding QuickSubscription}"
+                          AutomationProperties.Name="Subscription, optional" />
+              </StackPanel>
+              <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4">
+                <TextBlock Classes="field-label" Text="Reached through" />
+                <ComboBox HorizontalAlignment="Stretch" MinHeight="36"
+                          ItemsSource="{Binding QuickRouteKinds}" SelectedItem="{Binding QuickRouteKind}"
+                          AutomationProperties.Name="Bastion or Arc" />
+              </StackPanel>
+
+              <StackPanel Grid.Row="2" Spacing="4">
+                <TextBlock Classes="field-label" Text="Resource name — optional" />
+                <TextBox Text="{Binding QuickResourceName}" MinHeight="36"
+                         PlaceholderText="Leave empty to list everything"
+                         AutomationProperties.Name="Resource name, optional" />
+              </StackPanel>
+              <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4">
+                <TextBlock Classes="field-label" Text="Local account" />
+                <ComboBox HorizontalAlignment="Stretch" MinHeight="36"
+                          ItemsSource="{Binding LocalAccounts}" SelectedItem="{Binding QuickAccount}"
+                          AutomationProperties.Name="Local account to use inside the machine" />
+              </StackPanel>
+            </Grid>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="⌕  Search" Command="{Binding QuickSearchCommand}" IsEnabled="{Binding !IsBusy}" />
+              <TextBlock Text="{Binding QuickStatus}" VerticalAlignment="Center" TextWrapping="Wrap"
+                         Foreground="{DynamicResource StageColorMuted}" MaxWidth="440" />
+            </StackPanel>
+
+            <Border Classes="panel" Padding="0" IsVisible="{Binding QuickResults.Count}">
+              <ListBox Classes="estate-list" ItemsSource="{Binding QuickResults}" SelectedItem="{Binding QuickSelected}"
+                       MaxHeight="220" ScrollViewer.VerticalScrollBarVisibility="Visible"
+                       AutomationProperties.Name="Quick connect results">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:MachineRow">
+                    <Grid ColumnDefinitions="2*,80,110,*" Margin="10,6" ColumnSpacing="8">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource StageColorInk}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="1" Text="{Binding Source}" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource StageColorMuted}" />
+                      <TextBlock Grid.Column="2" Text="{Binding Route}" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource StageColorMuted}" />
+                      <TextBlock Grid.Column="3" Text="{Binding Subscription}" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource StageColorMuted}" TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Border>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Classes="primary" Content="Connect" Command="{Binding QuickConnectSelectedCommand}"
+                      IsEnabled="{Binding !IsBusy}" />
+              <Button Content="Cancel" Command="{Binding CancelQuickConnectCommand}" />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Border>
 
     <Border Grid.Row="3" Background="{DynamicResource StageColorSurfaceAlt}"
             BorderThickness="0,1,0,0" BorderBrush="{DynamicResource StageColorLine}" Padding="18,9">

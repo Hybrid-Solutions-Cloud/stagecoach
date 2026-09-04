@@ -25,7 +25,7 @@ requested features, then open questions. Nothing here is closed on a green build
 | 16 | "Already configured", but the account was never listed | Account saved, then subscription enumeration threw, so the list never reloaded — and the duplicate check then blocked every retry | 0.3.3 |
 | 17 | Left navigation items disappeared under the pointer | Fluent resolves state colours by **resource key**, not the control's `Background`; selected white text met the theme's light hover brush | 0.3.4 |
 
-## Bugs — fixed, pending release in 0.4.0
+## Bugs — fixed in 0.4.0 and 0.4.1
 
 | # | Report | Cause |
 |---|---|---|
@@ -41,15 +41,15 @@ requested features, then open questions. Nothing here is closed on a green build
 
 | # | Request | Status |
 |---|---|---|
-| A | Support-bundle / log collection like Prospector | **Done** — 0.3.1, Settings → Support and diagnostics |
+| A | Support-bundle / log collection like Prospector | **Done** — Settings and About |
 | B | Rename a connected account | **Done** — pending release in 0.4.0 |
 | C | Include all / exclude all for tenants and subscriptions | **Done** — pending release in 0.4.0 |
 | D | Force-close or silently update while running | **Done** — pending release in 0.4.0 |
-| E | Show when a scan last ran and what it found; an audit log | **Not started** |
-| F | Export and import settings to move to another laptop | **Not started** |
-| G | Application-level protection like Prospector's secure unlock | **Not started** — see below |
+| E | Show when a scan last ran and what it found; an audit log | **Done** — 0.5.0, Activity page |
+| F | Export and import settings to move to another laptop | **Done** — 0.5.0, Settings |
+| G | Application-level protection like Prospector secure unlock | **Done** — 0.5.0, passphrase lock |
 
-### H — Quick Connect (requested 2026-09-03, not started)
+### H — Quick Connect — Done, 0.5.0
 
 A one-off connection that saves nothing. Button opens a short prompt chain:
 
@@ -68,30 +68,30 @@ Fallbacks:
 Nothing is persisted: no identity, no pin, no scope, no estate row. It is a throwaway path beside
 the saved estate, for reaching something once without setting it up.
 
-### I — Tenant exclusion cascades to subscriptions (fixed, pending release)
+### I — Tenant exclusion cascades to subscriptions — Done, 0.4.1
 
 Excluding a tenant now greys out its subscriptions, marks them "Tenant excluded", disables their
 toggle, and — the part that actually mattered — removes them from what discovery scans. Previously
 `DiscoverAsync` filtered only on the subscription's own flag, so a subscription left enabled under
 an excluded tenant would still have been queried.
 
-## Open questions
+## Resolved design questions
 
-**G — application sign-in.** Stagecoach currently has no unlock of its own. Its data is bound to the
+**G — application sign-in. RESOLVED in 0.5.0** with an optional passphrase lock. Without it, protection is as below. Its data is bound to the
 Windows account: SQLCipher database with a DPAPI `CurrentUser` key, local passwords in Windows
 Credential Manager, Azure tokens in each account's isolated Azure CLI cache. Another Windows user
 cannot read it and the files are useless on another machine — but anyone at an unlocked session can.
 Vault Prospector adds an explicit unlock gate. Whether Stagecoach should is an open product decision.
 
-**E — audit log.** Should cover: scan start and finish per identity, counts discovered, errors, and
+**E — audit log. DELIVERED in 0.5.0** on the Activity page. Covers: scan start and finish per identity, counts discovered, errors, and
 connection attempts. Deliberately excludes credentials and tokens. Home is likely a new page rather
 than Settings.
 
-**F — export/import.** Portable content: connection identities without passwords, machine pins,
+**F — export/import. DELIVERED in 0.5.0** in Settings. Portable content: connection identities without passwords, machine pins,
 scope selection, settings. Must **never** include the SQLCipher key, Credential Manager entries, or
 Azure token caches, since those are machine and user bound by design.
 
 ## Not yet proven
 
 No live connection to a machine has been made — Bastion, Arc RDP-over-SSH, and `TERMSRV` credential
-staging are all unexercised. With discovery fixed in 0.4.0, this is the next thing to validate.
+staging are all unexercised. With discovery fixed in 0.4.1, this is the next thing to validate.

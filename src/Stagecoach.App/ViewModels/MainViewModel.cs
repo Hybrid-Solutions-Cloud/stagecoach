@@ -762,6 +762,155 @@ public partial class MainViewModel : ObservableObject
     /// operator can attach to a support request. Nothing from the database, the isolated Azure CLI
     /// profiles, or Windows Credential Manager is included.
     /// </summary>
+    // ---------------------------------------------------------------- Quick connect
+
+    /// <summary>
+    /// A one-off connection that persists nothing: no identity, no pin, no scope, no estate row.
+    /// It queries Resource Graph directly for the chosen scope and connects to what is picked.
+    /// </summary>
+    public ObservableCollection<TenantRow> QuickTenants { get; } = [];
+    public ObservableCollection<SubscriptionRow> QuickSubscriptions { get; } = [];
+    public ObservableCollection<MachineRow> QuickResults { get; } = [];
+    public ObservableCollection<string> QuickRouteKinds { get; } = ["Azure Bastion", "Azure Arc"];
+
+    [ObservableProperty] private bool _isQuickConnectOpen;
+    [ObservableProperty] private IdentityRow? _quickIdentity;
+    [ObservableProperty] private TenantRow? _quickTenant;
+    [ObservableProperty] private SubscriptionRow? _quickSubscription;
+    [ObservableProperty] private string _quickRouteKind = "Azure Bastion";
+    [ObservableProperty] private string _quickResourceName = string.Empty;
+    [ObservableProperty] private MachineRow? _quickSelected;
+    [ObservableProperty] private LocalAccountRow? _quickAccount;
+    [ObservableProperty] private string _quickStatus = string.Empty;
+
+    public bool QuickNeedsLocalAccount => QuickRouteKind == "Azure Arc";
+
+    partial void OnQuickRouteKindChanged(string value) => OnPropertyChanged(nameof(QuickNeedsLocalAccount));
+
+    [RelayCommand]
+    private async Task OpenQuickConnectAsync()
+    {
+        QuickResults.Clear();
+        QuickSubscriptions.Clear();
+        QuickTenants.Clear();
+        QuickResourceName = string.Empty;
+        QuickSelected = null;
+        QuickStatus = Identities.Count == 0
+            ? "Connect a Microsoft Entra account first — Quick connect signs in through one you already have."
+            : "Choose an account and tenant, then search.";
+        QuickIdentity = SelectedIdentity ?? Identities.FirstOrDefault();
+        QuickAccount = LocalAccounts.FirstOrDefault();
+        IsQuickConnectOpen = true;
+        await LoadQuickTenantsAsync();
+    }
+
+    partial void OnQuickIdentityChanged(IdentityRow? value) => _ = LoadQuickTenantsAsync();
+
+    private async Task LoadQuickTenantsAsync()
+    {
+        QuickTenants.Clear();
+        QuickSubscriptions.Clear();
+        if (QuickIdentity is not { } row) return;
+        try
+        {
+            foreach (var tenant in await _store.GetTenantsAsync(row.Profile.Id)) QuickTenants.Add(new TenantRow(tenant));
+            QuickTenant = QuickTenants.FirstOrDefault();
+            await LoadQuickSubscriptionsAsync();
+        }
+        catch (Exception exception)
+        {
+            CrashLog.Record("Quick connect tenants", exception);
+            QuickStatus = SafeMessage(exception);
+        }
+    }
+
+    partial void OnQuickTenantChanged(TenantRow? value) => _ = LoadQuickSubscriptionsAsync();
+
+    private async Task LoadQuickSubscriptionsAsync()
+    {
+        QuickSubscriptions.Clear();
+        if (QuickIdentity is not { } row || QuickTenant is not { } tenant) return;
+        foreach (var subscription in await _store.GetSubscriptionsAsync(row.Profile.Id))
+        {
+            if (string.Equals(subscription.TenantId, tenant.TenantId, StringComparison.OrdinalIgnoreCase))
+                QuickSubscriptions.Add(new SubscriptionRow(subscription));
+        }
+    }
+
+    /// <summary>
+    /// Searches the chosen scope without saving anything. With no subscription chosen it searches
+    /// every subscription in the tenant; with no resource name it lists everything of the chosen
+    /// kind so the operator can pick.
+    /// </summary>
+    [RelayCommand]
+    private async Task QuickSearchAsync()
+    {
+        if (QuickIdentity is not { } identity) { QuickStatus = "Choose an account."; return; }
+        if (QuickTenant is not { } tenant) { QuickStatus = "Choose a tenant."; return; }
+
+        await RunBusyAsync("Searching", async () =>
+        {
+            QuickResults.Clear();
+            QuickSelected = null;
+
+            SubscriptionScope[] scope = QuickSubscription is { } chosen
+                ? [chosen.Scope with { IsEnabled = true }]
+                : [.. (await _store.GetSubscriptionsAsync(identity.Profile.Id))
+                    .Where(item => string.Equals(item.TenantId, tenant.TenantId, StringComparison.OrdinalIgnoreCase))
+                    .Select(item => item with { IsEnabled = true })];
+
+            if (scope.Length == 0)
+            {
+                QuickStatus = "That tenant has no known subscriptions. Use Refresh available scope first.";
+                return;
+            }
+
+            // Discovery only — the result is never written to the store, so nothing is remembered.
+            var result = await _discovery.DiscoverAsync(identity.Profile, scope);
+
+            var wantArc = QuickRouteKind == "Azure Arc";
+            var name = QuickResourceName.Trim();
+            var matches = result.Machines
+                .Where(machine => wantArc
+                    ? machine.Kind is MachineKind.ArcServer or MachineKind.AzureLocalVm
+                    : machine.Kind is MachineKind.AzureVm)
+                .Where(machine => name.Length == 0 ||
+                                  machine.Name.Contains(name, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(machine => machine.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToArray();
+
+            foreach (var machine in matches)
+                QuickResults.Add(new MachineRow(machine, TenantLabel, SubscriptionLabel, null, null));
+
+            QuickSelected = QuickResults.FirstOrDefault();
+            QuickStatus = matches.Length == 0
+                ? $"No {(wantArc ? "Arc" : "Azure")} machines matched in {scope.Length} subscription(s)."
+                : $"{matches.Length} match(es) across {scope.Length} subscription(s). Pick one and connect.";
+        });
+    }
+
+    [RelayCommand]
+    private async Task QuickConnectSelectedAsync()
+    {
+        if (QuickSelected is not { } row) { QuickStatus = "Pick a machine first."; return; }
+        if (row.SelectedPath is not { } path) { QuickStatus = "That machine has no usable route."; return; }
+        if (QuickNeedsLocalAccount && QuickAccount is null)
+        {
+            QuickStatus = "Choose the local account to use inside the machine.";
+            return;
+        }
+
+        IsQuickConnectOpen = false;
+        await LaunchAsync(row, path, QuickNeedsLocalAccount ? QuickAccount : QuickAccount);
+    }
+
+    [RelayCommand]
+    private void CancelQuickConnect()
+    {
+        IsQuickConnectOpen = false;
+        QuickResults.Clear();
+    }
+
     // ---------------------------------------------------------------- Lock, portability, activity
 
     public ObservableCollection<AuditRow> AuditEvents { get; } = [];
