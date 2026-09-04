@@ -207,7 +207,13 @@ public partial class MainViewModel : ObservableObject
             await ReloadLocalAccountsAsync();
             await ReloadMachinesAsync();
             await ReloadSessionsAsync();
-            await RefreshAuditAsync();
+
+            // Recording the start answers "when was this last used" and means the Activity page is
+            // never blank on a fresh installation, which reads as broken rather than as empty.
+            await RecordAsync(
+                AuditCategory.Identity,
+                "Stagecoach opened",
+                $"{Identities.Count} connected account(s), {Machines.Count} machine(s) cached");
 
             // The machine list is always the landing screen. An operator with no identity yet is
             // told what to do rather than being dropped into a settings surface.
@@ -272,6 +278,11 @@ public partial class MainViewModel : ObservableObject
                     await _store.UpsertIdentityInventoryAsync(inventory);
                     StatusMessage = $"{identity.DisplayName} connected. Choose the tenants and subscriptions to scan.";
                 }
+
+                await RecordAsync(
+                    AuditCategory.Identity,
+                    $"Connected {identity.DisplayName}",
+                    useDeviceCode ? "Device-code sign-in" : "Interactive sign-in");
             }
             finally
             {
@@ -292,6 +303,7 @@ public partial class MainViewModel : ObservableObject
         {
             await _identityService.ReauthenticateAsync(row.Profile, useDeviceCode: false, progress);
             await ReloadIdentitiesAsync();
+            await RecordAsync(AuditCategory.Identity, $"Reauthenticated {row.DisplayName}");
         });
     }
 
@@ -304,6 +316,7 @@ public partial class MainViewModel : ObservableObject
             await _identityService.RemoveAsync(row.Profile);
             await ReloadIdentitiesAsync();
             await ReloadMachinesAsync();
+            await RecordAsync(AuditCategory.Identity, $"Removed {row.DisplayName}");
         });
     }
 
@@ -321,6 +334,10 @@ public partial class MainViewModel : ObservableObject
             var inventory = await _identityService.RefreshInventoryAsync(identity.Profile);
             await _store.UpsertIdentityInventoryAsync(inventory);
             await LoadScopeAsync(identity.Profile.Id);
+            await RecordAsync(
+                AuditCategory.Scope,
+                $"Refreshed available scope for {identity.DisplayName}",
+                $"{inventory.Tenants.Count} tenant(s), {inventory.Subscriptions.Count} subscription(s) visible");
             StatusMessage = "New tenants and subscriptions stay excluded until you include them.";
         });
     }
@@ -334,14 +351,32 @@ public partial class MainViewModel : ObservableObject
         await RunBusyAsync($"Rescanning machines for {identity.DisplayName}", async () =>
         {
             var subscriptions = await GetScannableSubscriptionsAsync(identity.Profile.Id);
-            var result = await _discovery.DiscoverAsync(identity.Profile, subscriptions);
-            await _store.UpsertDiscoveryAsync(result);
-            await ReloadMachinesAsync();
             await RecordAsync(
                 AuditCategory.Discovery,
-                $"Rescanned {identity.DisplayName}",
-                $"{subscriptions.Count} subscription(s) in scope, {result.Machines.Count} machine(s) found");
-            StatusMessage = $"{identity.DisplayName} rescanned — {Machines.Count} machines";
+                $"Scan started for {identity.DisplayName}",
+                $"{subscriptions.Count} subscription(s) in scope");
+            try
+            {
+                var result = await _discovery.DiscoverAsync(identity.Profile, subscriptions);
+                await _store.UpsertDiscoveryAsync(result);
+                await ReloadMachinesAsync();
+                var detail = $"{subscriptions.Count} subscription(s) in scope, {result.Machines.Count} machine(s) found";
+                await RecordAsync(
+                    AuditCategory.Discovery,
+                    $"Scan finished for {identity.DisplayName}",
+                    result.SafeWarnings.Count == 0 ? detail : $"{detail}, {result.SafeWarnings.Count} warning(s)");
+                StatusMessage = $"{identity.DisplayName} rescanned — {Machines.Count} machines";
+            }
+            catch (Exception exception)
+            {
+                // A scan that fails is the entry an operator most needs to see. Recording only
+                // success meant the Activity page stayed empty exactly when something was wrong.
+                await RecordAsync(
+                    AuditCategory.Discovery,
+                    $"Scan failed for {identity.DisplayName}",
+                    exception.Message);
+                throw;
+            }
         });
     }
 
