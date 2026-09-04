@@ -36,6 +36,8 @@
                      Foreground="{DynamicResource StageColorMuted}" IsVisible="False" />
           <Button x:Name="ContinueButton" Content="Continue" HorizontalAlignment="Stretch"
                   IsVisible="False" />
+          <Button x:Name="SwitchOwnerButton" HorizontalAlignment="Stretch" IsVisible="False"
+                  Content="Use this Windows account instead" />
         </StackPanel>
 
         <StackPanel Orientation="Horizontal" Spacing="8">

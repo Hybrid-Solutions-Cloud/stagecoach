@@ -20,6 +20,7 @@ public partial class UnlockWindow : Window
     private readonly TaskCompletionSource<bool> _result = new();
     private readonly IAzureCliRunner _cli;
     private Button? _continueButton;
+    private Button? _switchOwnerButton;
     private bool _verifying;
 
     public UnlockWindow() : this(new Infrastructure.Azure.AzureCliRunner()) { }
@@ -34,6 +35,7 @@ public partial class UnlockWindow : Window
         var verifyButton = this.FindControl<Button>("VerifyButton")!;
         var verifyStatus = this.FindControl<TextBlock>("VerifyStatus")!;
         var continueButton = this.FindControl<Button>("ContinueButton")!;
+        var switchOwner = this.FindControl<Button>("SwitchOwnerButton")!;
         var quit = this.FindControl<Button>("QuitButton")!;
         var reset = this.FindControl<Button>("ResetButton")!;
 
@@ -44,13 +46,20 @@ public partial class UnlockWindow : Window
             Close();
         };
 
+        // The way out of an owner that can no longer be verified, without destroying anything. The
+        // estate stays exactly where it is; only the record of who opens Stagecoach changes.
+        switchOwner.Content = $"Use this Windows account instead ({AppOwner.CurrentWindowsAccount().Name})";
+        switchOwner.Click += async (_, _) => await GuardAsync(
+            switchOwner, () => SwitchToWindowsOwnerAsync(verifyStatus));
+
         var owner = AppOwner.Current;
         ownerText.Text = owner is null ? "Unlock Stagecoach" : owner.DisplayName;
 
         if (owner?.Kind == AppOwnerKind.EntraAccount)
         {
-            methodText.Text = "Sign in to the Entra account that owns this installation.";
+            methodText.Text = $"This installation is owned by {owner.EntraUserPrincipalName}.";
             verifyButton.Content = "Sign in with Microsoft";
+            _switchOwnerButton = switchOwner;
             verifyButton.Click += async (_, _) => await GuardAsync(
                 verifyButton, () => VerifyEntraAsync(verifyStatus, owner));
         }
@@ -84,12 +93,13 @@ public partial class UnlockWindow : Window
             }
         };
 
-        // The verification prompt is the whole screen, so raise it without making the operator click
-        // a button first. The button stays for a second attempt.
+        // Only checks that cannot prompt run on their own. An interactive sign-in launched
+        // automatically is what made this screen feel like an endless login loop, so it now waits
+        // for a deliberate click.
         Opened += async (_, _) => await GuardAsync(
             verifyButton,
             () => owner?.Kind == AppOwnerKind.EntraAccount
-                ? VerifyEntraAsync(verifyStatus, owner)
+                ? VerifyEntraSilentlyAsync(verifyStatus, owner)
                 : VerifyWindowsAsync(verifyStatus));
 
         Closed += (_, _) => _result.TrySetResult(false);
@@ -186,29 +196,8 @@ public partial class UnlockWindow : Window
         status.IsVisible = true;
         try
         {
-            // On a Microsoft Entra joined machine the Windows account IS the owning Entra account,
-            // and Windows already authenticated it against Entra to create this session. There is
-            // nothing left to prove, so do not ask for a sign-in at all.
-            if (AppOwner.CurrentWindowsUserPrincipalName() is { Length: > 0 } windowsUpn &&
-                AppOwner.EntraAccountIsOwner(windowsUpn))
-            {
-                _result.TrySetResult(true);
-                Close();
-                return;
-            }
-
             var directory = AppOwner.EntraOwnerConfigDirectory;
             Directory.CreateDirectory(directory);
-
-            // Then the existing Azure CLI session. Forcing a fresh interactive sign-in on every
-            // start is not a security gain — the profile is already proof this account signed in.
-            status.Text = "Checking your sign-in…";
-            if (await SignedInOwnerAsync(directory))
-            {
-                _result.TrySetResult(true);
-                Close();
-                return;
-            }
 
             status.Text = "Signing in…";
             var login = await _cli.RunInteractiveAsync(
@@ -228,11 +217,96 @@ public partial class UnlockWindow : Window
 
             status.Text =
                 $"That account does not own this installation. It belongs to {owner.EntraUserPrincipalName}.";
+            ShowSwitchOwner();
         }
         catch (Exception exception)
         {
             CrashLog.Record("Owner Entra verification", exception);
             status.Text = "Sign-in failed. See the error log.";
+            ShowSwitchOwner();
+        }
+    }
+
+    /// <summary>
+    /// The checks that cannot prompt, run on open. Two of them, cheapest first: on a Microsoft Entra
+    /// joined machine the Windows account <b>is</b> an Entra account and Windows already
+    /// authenticated it to create this session; failing that, the isolated Azure CLI profile may
+    /// already hold a valid sign-in for the owner. Either way there is nothing left to prove.
+    /// </summary>
+    private async Task VerifyEntraSilentlyAsync(TextBlock status, AppOwnerRecord owner)
+    {
+        try
+        {
+            if (AppOwner.CurrentWindowsUserPrincipalName() is { Length: > 0 } windowsUpn &&
+                AppOwner.EntraAccountIsOwner(windowsUpn))
+            {
+                _result.TrySetResult(true);
+                Close();
+                return;
+            }
+
+            status.IsVisible = true;
+            status.Text = "Checking your sign-in…";
+            if (await SignedInOwnerAsync(AppOwner.EntraOwnerConfigDirectory))
+            {
+                _result.TrySetResult(true);
+                Close();
+                return;
+            }
+
+            status.Text = $"Sign in as {owner.EntraUserPrincipalName} to open Stagecoach.";
+            ShowSwitchOwner();
+        }
+        catch (Exception exception)
+        {
+            CrashLog.Record("Owner Entra check", exception);
+            status.IsVisible = true;
+            status.Text = "Your sign-in could not be checked.";
+            ShowSwitchOwner();
+        }
+    }
+
+    private void ShowSwitchOwner()
+    {
+        if (_switchOwnerButton is not null) _switchOwnerButton.IsVisible = true;
+    }
+
+    /// <summary>
+    /// Hands this installation to the Windows account at the keyboard, after that account passes the
+    /// same presence check a Windows owner faces. Nothing stored is touched — the database is
+    /// already encrypted for this Windows account — so no machines, accounts or pins are lost.
+    /// </summary>
+    private async Task SwitchToWindowsOwnerAsync(TextBlock status)
+    {
+        status.IsVisible = true;
+        status.Text = "Verifying with Windows…";
+        try
+        {
+            var hello = new WindowsHelloVerifier(() => TryGetPlatformHandle()?.Handle ?? 0);
+            var result = await hello.VerifyAsync("Take ownership of Stagecoach");
+            if (WindowsHelloVerifier.ShouldFallBackToCredentials(result))
+            {
+                var credentials = new WindowsCredentialVerifier(() => TryGetPlatformHandle()?.Handle ?? 0);
+                result = await credentials.VerifyAsync("Take ownership of Stagecoach");
+            }
+
+            // The same reasoning as continuing past an unverifiable prompt: Windows released the
+            // database key to this account already, so a check it cannot perform must not lock it.
+            if (result == UserVerificationResult.Canceled)
+            {
+                status.Text = "Cancelled.";
+                return;
+            }
+
+            var account = AppOwner.CurrentWindowsAccount();
+            AppOwner.Configure(AppOwnerKind.WindowsAccount, account.Name);
+            _result.TrySetResult(true);
+            Close();
+        }
+        catch (Exception exception)
+        {
+            CrashLog.Record("Switch owner to Windows account", exception);
+            status.Text = "The owner could not be changed. See the error log.";
         }
     }
 
