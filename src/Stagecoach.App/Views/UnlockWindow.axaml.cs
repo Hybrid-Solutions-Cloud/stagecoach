@@ -19,6 +19,7 @@ public partial class UnlockWindow : Window
 {
     private readonly TaskCompletionSource<bool> _result = new();
     private readonly IAzureCliRunner _cli;
+    private Button? _continueButton;
     private bool _verifying;
 
     public UnlockWindow() : this(new Infrastructure.Azure.AzureCliRunner()) { }
@@ -32,8 +33,16 @@ public partial class UnlockWindow : Window
         var methodText = this.FindControl<TextBlock>("MethodText")!;
         var verifyButton = this.FindControl<Button>("VerifyButton")!;
         var verifyStatus = this.FindControl<TextBlock>("VerifyStatus")!;
+        var continueButton = this.FindControl<Button>("ContinueButton")!;
         var quit = this.FindControl<Button>("QuitButton")!;
         var reset = this.FindControl<Button>("ResetButton")!;
+
+        _continueButton = continueButton;
+        continueButton.Click += (_, _) =>
+        {
+            _result.TrySetResult(true);
+            Close();
+        };
 
         var owner = AppOwner.Current;
         ownerText.Text = owner is null ? "Unlock Stagecoach" : owner.DisplayName;
@@ -141,22 +150,57 @@ public partial class UnlockWindow : Window
             }
 
             status.Text = WindowsHelloVerifier.Describe(result);
+            OfferToContinue(result);
         }
         catch (Exception exception)
         {
             CrashLog.Record("Windows verification", exception);
             status.Text = "Windows could not be asked to verify you. See the error log.";
+            OfferToContinue(UserVerificationResult.Unavailable);
         }
+    }
+
+    /// <summary>
+    /// Offers a way in when Windows cannot actually run a check, rather than leaving a dead end.
+    /// <para>
+    /// On a Microsoft Entra joined machine the signed-in account is a cloud account, and
+    /// <c>LogonUser</c> cannot validate one with a password — so a correct password and a wrong one
+    /// look identical here. Combined with Windows Hello being unable to prompt inside a remote
+    /// session, that would lock an operator out of a machine they are already signed in to.
+    /// </para>
+    /// <para>
+    /// The Windows account has already been matched by SID, and what Stagecoach stores is encrypted
+    /// with a key Windows releases only to that account — so anyone who could click this could read
+    /// the same data anyway. The check is a speed bump, and it must not become a wall.
+    /// </para>
+    /// </summary>
+    private void OfferToContinue(UserVerificationResult result)
+    {
+        if (result == UserVerificationResult.Canceled || _continueButton is null) return;
+        _continueButton.Content = $"Continue as {AppOwner.CurrentWindowsAccount().Name}";
+        _continueButton.IsVisible = true;
     }
 
     private async Task VerifyEntraAsync(TextBlock status, AppOwnerRecord owner)
     {
         status.IsVisible = true;
-        status.Text = "Signing in…";
         try
         {
             var directory = AppOwner.EntraOwnerConfigDirectory;
             Directory.CreateDirectory(directory);
+
+            // The existing session first. Forcing a fresh interactive sign-in on every start meant
+            // being asked to log in again each time the application was opened, which is not a
+            // security gain — the profile is already proof this account signed in here.
+            status.Text = "Checking your sign-in…";
+            if (await SignedInOwnerAsync(directory))
+            {
+                _result.TrySetResult(true);
+                Close();
+                return;
+            }
+
+            status.Text = "Signing in…";
             var login = await _cli.RunInteractiveAsync(
                 directory, ["login", "--allow-no-subscriptions", "--output", "json"]);
             if (!login.Succeeded)
@@ -165,26 +209,44 @@ public partial class UnlockWindow : Window
                 return;
             }
 
-            var account = await _cli.RunAsync(directory, ["account", "show", "--output", "json"]);
-            using var document = System.Text.Json.JsonDocument.Parse(account.StandardOutput);
-            var signedIn = document.RootElement.TryGetProperty("user", out var user) &&
-                           user.TryGetProperty("name", out var name)
-                ? name.GetString() ?? string.Empty
-                : string.Empty;
-
-            if (AppOwner.EntraAccountIsOwner(signedIn))
+            if (await SignedInOwnerAsync(directory))
             {
                 _result.TrySetResult(true);
                 Close();
                 return;
             }
 
-            status.Text = $"{signedIn} does not own this installation. It belongs to {owner.EntraUserPrincipalName}.";
+            status.Text =
+                $"That account does not own this installation. It belongs to {owner.EntraUserPrincipalName}.";
         }
         catch (Exception exception)
         {
             CrashLog.Record("Owner Entra verification", exception);
             status.Text = "Sign-in failed. See the error log.";
+        }
+    }
+
+    /// <summary>
+    /// Whether the owning Entra account is already signed in to its isolated profile. Never
+    /// interactive: a failure here simply means a sign-in is needed.
+    /// </summary>
+    private async Task<bool> SignedInOwnerAsync(string directory)
+    {
+        try
+        {
+            var account = await _cli.RunAsync(directory, ["account", "show", "--output", "json"]);
+            if (!account.Succeeded || string.IsNullOrWhiteSpace(account.StandardOutput)) return false;
+
+            using var document = System.Text.Json.JsonDocument.Parse(account.StandardOutput);
+            var signedIn = document.RootElement.TryGetProperty("user", out var user) &&
+                           user.TryGetProperty("name", out var name)
+                ? name.GetString() ?? string.Empty
+                : string.Empty;
+            return signedIn.Length > 0 && AppOwner.EntraAccountIsOwner(signedIn);
+        }
+        catch (Exception exception) when (exception is System.Text.Json.JsonException or InvalidOperationException)
+        {
+            return false;
         }
     }
 

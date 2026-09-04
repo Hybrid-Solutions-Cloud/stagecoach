@@ -73,6 +73,56 @@ public sealed class EncryptedSqliteMetadataStoreTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Machine flags must survive a write and a reopen with each value landing in its own column.
+    /// <para>
+    /// 0.6.0 read and wrote the Machines table by position with <c>SELECT *</c> and a bare
+    /// <c>INSERT ... VALUES</c>. A database created before <c>SupportsEntraLogin</c> existed has
+    /// that column appended to the end by ALTER TABLE, so its physical order differs from a fresh
+    /// one and every value after ordinal 14 lined up against the wrong field — reading threw
+    /// "data is NULL at ordinal 16" and rescans wrote flags into the wrong columns. Columns are
+    /// named on both sides now.
+    /// </para>
+    /// <para>
+    /// This covers the round trip and the distinctness of the two flags; it does not build a
+    /// pre-migration table, because the store owns the encryption key and the test cannot reach past
+    /// it to reshape the schema.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task MachineFlagsRoundTripIntoTheirOwnColumns()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var databasePath = Path.Combine(_directory, "test.db");
+        var keyPath = Path.Combine(_directory, "test.key");
+
+        var store = new EncryptedSqliteMetadataStore(databasePath, keyPath);
+        await store.InitializeAsync(token);
+        var identity = new AzureIdentityProfile(
+            Guid.NewGuid(), "Lab", "operator@example.com", "C:\\isolated", AuthenticationState.Ready, DateTimeOffset.UtcNow);
+        await store.UpsertIdentityAsync(identity, token);
+        var path = new AzureAccessPath(identity.Id, "tenant", "subscription", ConnectionRouteKind.DirectRdp, ReadinessState.Ready, "ready");
+
+        // Entra sign-in set, favourite not — so the two cannot be confused for one another.
+        var machine = new MachineRecord(
+            "/machine", "vm1", MachineKind.AzureVm, OperatingSystemKind.Windows, "Windows", "rg", "eastus",
+            "running", string.Empty, "10.0.0.4", null, "/vnet", null, new Dictionary<string, string>(),
+            [path], DateTimeOffset.UtcNow)
+        { SupportsEntraLogin = true };
+        await store.UpsertDiscoveryAsync(new DiscoveryResult(identity.Id, [machine], DateTimeOffset.UtcNow, []), token);
+
+        // Reopening re-runs the migration step, which must not disturb what is already stored.
+        var reopened = new EncryptedSqliteMetadataStore(databasePath, keyPath);
+        await reopened.InitializeAsync(token);
+        var loaded = Assert.Single(await reopened.GetMachinesAsync(token));
+        Assert.Equal("vm1", loaded.Name);
+        Assert.Equal("10.0.0.4", loaded.PrivateIpAddress);
+        Assert.True(loaded.SupportsEntraLogin);
+        Assert.False(loaded.IsFavorite);
+        Assert.Null(loaded.LastConnectedAt);
+        Assert.Equal(ConnectionRouteKind.DirectRdp, Assert.Single(loaded.AccessPaths).Route);
+    }
+
+    /// <summary>
     /// The one-time removal of the passphrase Stagecoach used to require. An existing installation
     /// has its key wrapped with entropy derived from that passphrase; removing it must unwrap once
     /// and rewrap under Windows protection alone, leaving the estate readable with nothing typed.

@@ -34,6 +34,8 @@
                   HorizontalAlignment="Stretch" IsDefault="True" />
           <TextBlock x:Name="VerifyStatus" TextWrapping="Wrap"
                      Foreground="{DynamicResource StageColorMuted}" IsVisible="False" />
+          <Button x:Name="ContinueButton" Content="Continue" HorizontalAlignment="Stretch"
+                  IsVisible="False" />
         </StackPanel>
 
         <StackPanel Orientation="Horizontal" Spacing="8">

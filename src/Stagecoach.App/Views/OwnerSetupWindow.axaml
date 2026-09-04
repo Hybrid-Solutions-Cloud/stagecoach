@@ -53,7 +53,7 @@
         </Border>
 
         <TextBlock FontSize="{StaticResource StageFontSize11}" Opacity="0.75" TextWrapping="Wrap"
-                   Text="There is no passphrase to invent or remember. Stagecoach protects its database with Windows data protection tied to your Windows account, exactly as Vault Prospector does." />
+                   Text="There is no passphrase to invent or remember. Stagecoach encrypts what it stores with a key that Windows protects for your account, so it cannot be read by anyone else signing in to this machine, or moved to another one." />
 
         <TextBlock x:Name="ErrorText" Foreground="{DynamicResource StageColorDanger}"
                    TextWrapping="Wrap" IsVisible="False" />

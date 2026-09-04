@@ -266,7 +266,15 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
             }
         }
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT * FROM Machines ORDER BY IsFavorite DESC,Name";
+        // Columns are named, never "SELECT *". ALTER TABLE ADD COLUMN appends to the end, so a
+        // database created before a column was introduced has a different physical order than a
+        // fresh one, and positional reads silently line up against the wrong fields.
+        command.CommandText = """
+            SELECT ResourceId,Name,Kind,OperatingSystem,OperatingSystemName,ResourceGroup,Location,
+                   PowerState,AgentState,PrivateIpAddress,PublicIpAddress,VirtualNetworkId,DomainName,
+                   TagsJson,LastDiscoveredAt,SupportsEntraLogin,IsFavorite,LastConnectedAt
+            FROM Machines ORDER BY IsFavorite DESC,Name
+            """;
         await using var machineReader = await command.ExecuteReaderAsync(cancellationToken);
         var machines = new List<MachineRecord>();
         while (await machineReader.ReadAsync(cancellationToken))
@@ -280,7 +288,7 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
                 machineReader.GetString(8), NullableString(machineReader, 9), NullableString(machineReader, 10),
                 NullableString(machineReader, 11), NullableString(machineReader, 12), tags,
                 paths.GetValueOrDefault(resourceId) ?? [], DateTimeOffset.Parse(machineReader.GetString(14)),
-                machineReader.GetInt32(15) != 0, machineReader.GetInt32(16) != 0, ParseDate(machineReader, 17)));
+                Flag(machineReader, 15), Flag(machineReader, 16), ParseDate(machineReader, 17)));
         }
         return machines;
     }
@@ -619,7 +627,10 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO Machines VALUES ($id,$name,$kind,$os,$osName,$rg,$location,$power,$agent,$private,$public,$vnet,$domain,$tags,$seen,$entra,$favorite,$connected)
+            INSERT INTO Machines (ResourceId,Name,Kind,OperatingSystem,OperatingSystemName,ResourceGroup,
+                Location,PowerState,AgentState,PrivateIpAddress,PublicIpAddress,VirtualNetworkId,DomainName,
+                TagsJson,LastDiscoveredAt,SupportsEntraLogin,IsFavorite,LastConnectedAt)
+            VALUES ($id,$name,$kind,$os,$osName,$rg,$location,$power,$agent,$private,$public,$vnet,$domain,$tags,$seen,$entra,$favorite,$connected)
             ON CONFLICT(ResourceId) DO UPDATE SET Name=$name,Kind=$kind,OperatingSystem=$os,
                 OperatingSystemName=$osName,ResourceGroup=$rg,Location=$location,PowerState=$power,
                 AgentState=$agent,PrivateIpAddress=$private,PublicIpAddress=$public,VirtualNetworkId=$vnet,
@@ -684,6 +695,15 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         command.Parameters.AddWithValue(name, value ?? DBNull.Value);
 
     private static string? NullableString(SqliteDataReader reader, int ordinal) => reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+
+    /// <summary>
+    /// A boolean column that tolerates NULL. Rows written before a column existed, or written by a
+    /// version that put values in the wrong place, can hold NULL where a flag is expected; that must
+    /// read as "not set" rather than throwing and taking the whole machine list with it.
+    /// </summary>
+    private static bool Flag(SqliteDataReader reader, int ordinal) =>
+        !reader.IsDBNull(ordinal) && reader.GetInt32(ordinal) != 0;
+
     private static DateTimeOffset? ParseDate(SqliteDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : DateTimeOffset.Parse(reader.GetString(ordinal));
     private static string? Format(DateTimeOffset? value) => value?.ToString("O");
