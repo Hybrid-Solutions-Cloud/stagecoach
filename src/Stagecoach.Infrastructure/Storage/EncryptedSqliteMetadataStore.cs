@@ -154,7 +154,11 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT * FROM Identities ORDER BY DisplayName";
+        command.CommandText = """
+            SELECT Id,DisplayName,AccountName,AzureConfigDirectory,AuthenticationState,
+                   LastAuthenticatedAt,IsEnabled,LastErrorCategory
+            FROM Identities ORDER BY DisplayName
+            """;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var results = new List<AzureIdentityProfile>();
         while (await reader.ReadAsync(cancellationToken)) results.Add(ReadIdentity(reader));
@@ -166,7 +170,9 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO Identities VALUES ($id,$display,$account,$directory,$state,$last,$enabled,$error)
+            INSERT INTO Identities (Id,DisplayName,AccountName,AzureConfigDirectory,AuthenticationState,
+                LastAuthenticatedAt,IsEnabled,LastErrorCategory)
+            VALUES ($id,$display,$account,$directory,$state,$last,$enabled,$error)
             ON CONFLICT(Id) DO UPDATE SET DisplayName=$display,AccountName=$account,
                 AzureConfigDirectory=$directory,AuthenticationState=$state,LastAuthenticatedAt=$last,
                 IsEnabled=$enabled,LastErrorCategory=$error
@@ -192,11 +198,13 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
     }
 
     public Task<IReadOnlyList<TenantScope>> GetTenantsAsync(Guid identityId, CancellationToken cancellationToken = default) =>
-        ReadListAsync(identityId, "SELECT * FROM Tenants WHERE IdentityId=$id ORDER BY DisplayName",
+        ReadListAsync(identityId,
+            "SELECT IdentityId,TenantId,DisplayName,IsEnabled,RequiresReview FROM Tenants WHERE IdentityId=$id ORDER BY DisplayName",
             reader => new TenantScope(identityId, reader.GetString(1), reader.GetString(2), reader.GetInt32(3) != 0, reader.GetInt32(4) != 0), cancellationToken);
 
     public Task<IReadOnlyList<SubscriptionScope>> GetSubscriptionsAsync(Guid identityId, CancellationToken cancellationToken = default) =>
-        ReadListAsync(identityId, "SELECT * FROM Subscriptions WHERE IdentityId=$id ORDER BY DisplayName",
+        ReadListAsync(identityId,
+            "SELECT IdentityId,TenantId,SubscriptionId,DisplayName,State,IsEnabled,RequiresReview FROM Subscriptions WHERE IdentityId=$id ORDER BY DisplayName",
             reader => new SubscriptionScope(identityId, reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetInt32(5) != 0, reader.GetInt32(6) != 0), cancellationToken);
 
     public async Task UpsertIdentityInventoryAsync(IdentityInventory inventory, CancellationToken cancellationToken = default)
@@ -209,7 +217,8 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
-                INSERT INTO Tenants VALUES ($identity,$tenant,$display,$enabled,$review)
+                INSERT INTO Tenants (IdentityId,TenantId,DisplayName,IsEnabled,RequiresReview)
+                VALUES ($identity,$tenant,$display,$enabled,$review)
                 ON CONFLICT(IdentityId,TenantId) DO UPDATE SET DisplayName=$display,
                     IsEnabled=$enabled,RequiresReview=$review
                 """;
@@ -225,7 +234,8 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
-                INSERT INTO Subscriptions VALUES ($identity,$tenant,$subscription,$display,$state,$enabled,$review)
+                INSERT INTO Subscriptions (IdentityId,TenantId,SubscriptionId,DisplayName,State,IsEnabled,RequiresReview)
+                VALUES ($identity,$tenant,$subscription,$display,$state,$enabled,$review)
                 ON CONFLICT(IdentityId,SubscriptionId) DO UPDATE SET TenantId=$tenant,DisplayName=$display,
                     State=$state,IsEnabled=$enabled,RequiresReview=$review
                 """;
@@ -253,7 +263,11 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         var paths = new Dictionary<string, List<AzureAccessPath>>(StringComparer.OrdinalIgnoreCase);
         await using (var pathCommand = connection.CreateCommand())
         {
-            pathCommand.CommandText = "SELECT * FROM AccessPaths";
+            pathCommand.CommandText = """
+                SELECT MachineResourceId,IdentityId,TenantId,SubscriptionId,Route,Readiness,Reason,
+                       BastionResourceId,IsPreferred
+                FROM AccessPaths
+                """;
             await using var reader = await pathCommand.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
@@ -329,7 +343,10 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT * FROM ConnectionIdentities ORDER BY DisplayName";
+        command.CommandText = """
+            SELECT Id,DisplayName,Kind,Username,CredentialTarget,SshPrivateKeyPath,IsEnabled
+            FROM ConnectionIdentities ORDER BY DisplayName
+            """;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var results = new List<ConnectionIdentityProfile>();
         while (await reader.ReadAsync(cancellationToken))
@@ -344,7 +361,8 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO ConnectionIdentities VALUES ($id,$display,$kind,$username,$credential,$key,$enabled)
+            INSERT INTO ConnectionIdentities (Id,DisplayName,Kind,Username,CredentialTarget,SshPrivateKeyPath,IsEnabled)
+            VALUES ($id,$display,$kind,$username,$credential,$key,$enabled)
             ON CONFLICT(Id) DO UPDATE SET DisplayName=$display,Kind=$kind,Username=$username,
                 CredentialTarget=$credential,SshPrivateKeyPath=$key,IsEnabled=$enabled
             """;
@@ -371,7 +389,10 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT * FROM ConnectionMappings ORDER BY Priority DESC";
+        command.CommandText = """
+            SELECT Id,ConnectionIdentityId,ScopeKind,MatchValue,Priority,IsRelayIdentity
+            FROM ConnectionMappings ORDER BY Priority DESC
+            """;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var results = new List<ConnectionIdentityMapping>();
         while (await reader.ReadAsync(cancellationToken))
@@ -385,7 +406,8 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO ConnectionMappings VALUES ($id,$identity,$scope,$match,$priority,$relay)
+            INSERT INTO ConnectionMappings (Id,ConnectionIdentityId,ScopeKind,MatchValue,Priority,IsRelayIdentity)
+            VALUES ($id,$identity,$scope,$match,$priority,$relay)
             ON CONFLICT(Id) DO UPDATE SET ConnectionIdentityId=$identity,ScopeKind=$scope,
                 MatchValue=$match,Priority=$priority,IsRelayIdentity=$relay
             """;
@@ -662,7 +684,9 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO AccessPaths VALUES ($machine,$identity,$tenant,$subscription,$route,$readiness,$reason,$bastion,$preferred,$seen)
+            INSERT INTO AccessPaths (MachineResourceId,IdentityId,TenantId,SubscriptionId,Route,Readiness,
+                Reason,BastionResourceId,IsPreferred,LastSeenAt)
+            VALUES ($machine,$identity,$tenant,$subscription,$route,$readiness,$reason,$bastion,$preferred,$seen)
             ON CONFLICT(MachineResourceId,IdentityId,Route) DO UPDATE SET TenantId=$tenant,
                 SubscriptionId=$subscription,Readiness=$readiness,Reason=$reason,BastionResourceId=$bastion,
                 IsPreferred=$preferred,LastSeenAt=$seen

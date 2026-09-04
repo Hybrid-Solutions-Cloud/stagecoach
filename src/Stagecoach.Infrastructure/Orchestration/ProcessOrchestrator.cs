@@ -285,22 +285,45 @@ public sealed class ProcessOrchestrator(
         };
     }
 
+    /// <summary>
+    /// Watches the client process and cleans the session up when it closes. Started without being
+    /// awaited, so it must never let an exception escape: an unobserved failure here would take the
+    /// process down at an unrelated moment, with a live session still running.
+    /// </summary>
     private async Task WatchClientAsync(SessionRuntime runtime)
     {
         try
         {
             if (runtime.Client is not null) await runtime.Client.WaitForExitAsync();
         }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            // The client was already gone; the session still needs cleaning up below.
+        }
         finally
         {
-            await StopAsync(runtime.Session.Id);
+            try { await StopAsync(runtime.Session.Id); }
+            catch (Exception) { /* Cleanup is best effort and never rethrows into nothing. */ }
         }
     }
 
+    /// <summary>
+    /// Watches the helper on routes that have no client process. Started without being awaited, so
+    /// like <see cref="WatchClientAsync"/> it must never let an exception escape.
+    /// </summary>
     private async Task WatchHelperAsync(SessionRuntime runtime)
     {
         if (runtime.Helper is null) return;
-        var exitCode = await runtime.Helper.Completion;
+        int exitCode;
+        try
+        {
+            exitCode = await runtime.Helper.Completion;
+        }
+        catch (Exception)
+        {
+            exitCode = -1;
+        }
+
         runtime.Session = runtime.Session with
         {
             State = exitCode == 0 ? SessionState.Stopped : SessionState.Failed,
@@ -311,7 +334,14 @@ public sealed class ProcessOrchestrator(
         // there: the runtime stayed in the registry and was never disposed, which left the staged
         // Remote Desktop credential sitting in Windows Credential Manager for good. Routes with a
         // client process are cleaned up by WatchClientAsync; these have only a helper.
-        if (_sessions.TryRemove(runtime.Session.Id, out _)) await runtime.DisposeAsync();
+        try
+        {
+            if (_sessions.TryRemove(runtime.Session.Id, out _)) await runtime.DisposeAsync();
+        }
+        catch (Exception)
+        {
+            // Best effort; releasing the credential must not surface as an unobserved failure.
+        }
     }
 
     private static Process StartMstsc(string endpoint, string? username)

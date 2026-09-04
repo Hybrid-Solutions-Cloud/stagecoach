@@ -20,9 +20,7 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
         Directory.CreateDirectory(configDirectory);
 
         await ConfigureProfileAsync(configDirectory, cancellationToken);
-        var arguments = new List<string> { "login", "--allow-no-subscriptions", "--output", "json" };
-        if (useDeviceCode) arguments.Add("--use-device-code");
-        var result = await cli.RunInteractiveAsync(configDirectory, arguments, progress, cancellationToken);
+        var result = await SignInAsync(configDirectory, useDeviceCode, progress, cancellationToken);
         if (!result.Succeeded)
         {
             TryDeleteDirectory(Path.GetDirectoryName(configDirectory)!);
@@ -99,9 +97,11 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
         IProgress<string>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        var arguments = new List<string> { "login", "--allow-no-subscriptions", "--output", "json" };
-        if (useDeviceCode) arguments.Add("--use-device-code");
-        var result = await cli.RunInteractiveAsync(identity.AzureConfigDirectory, arguments, progress, cancellationToken);
+        // An older profile predates the settings that stop the CLI asking questions, and nothing
+        // else ever rewrites them.
+        await ConfigureProfileAsync(identity.AzureConfigDirectory, cancellationToken);
+
+        var result = await SignInAsync(identity.AzureConfigDirectory, useDeviceCode, progress, cancellationToken);
         if (!result.Succeeded)
             return identity with
             {
@@ -269,6 +269,39 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
                 (detail is null ? string.Empty : $" Azure CLI reported: {detail}"));
         }
         return ReadAccountName(accounts.StandardOutput);
+    }
+
+    /// <summary>
+    /// Signs in, falling back to a device code when the browser handover produces nothing.
+    /// <para>
+    /// A browser sign-in that never appears cannot be told apart from one the operator is still
+    /// working through, so it can only end in a timeout — five minutes of nothing, and then a
+    /// message suggesting they try the other button. That happens on machines where the Web Account
+    /// Manager broker cannot show a window, which includes plenty of real ones. The device code
+    /// always works, so try it rather than sending someone back to the beginning.
+    /// </para>
+    /// </summary>
+    private async Task<CommandResult> SignInAsync(
+        string configDirectory,
+        bool useDeviceCode,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (!useDeviceCode)
+        {
+            var browser = await cli.RunInteractiveAsync(
+                configDirectory, ["login", "--allow-no-subscriptions", "--output", "json"], progress, cancellationToken);
+            if (browser.Succeeded) return browser;
+
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report("No sign-in prompt appeared. Use the code below to sign in instead.");
+        }
+
+        return await cli.RunInteractiveAsync(
+            configDirectory,
+            ["login", "--allow-no-subscriptions", "--use-device-code", "--output", "json"],
+            progress,
+            cancellationToken);
     }
 
     internal static Guid StableIdentityId(string accountName)

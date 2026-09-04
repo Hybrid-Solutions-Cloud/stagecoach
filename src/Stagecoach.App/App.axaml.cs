@@ -328,7 +328,14 @@ public partial class App : Application
         if (_auditStore is { } store)
         {
             _auditStore = null;
-            try { RecordAsync(store, AuditCategory.Application, "Stagecoach closed").GetAwaiter().GetResult(); }
+            // Off the UI thread, and bounded. Waiting on it directly deadlocks: the write resumes on
+            // the UI thread, which is the very thread being blocked. Exiting must never hang, so a
+            // missed entry is preferable to a window that will not close.
+            try
+            {
+                Task.Run(() => RecordAsync(store, AuditCategory.Application, "Stagecoach closed"))
+                    .Wait(TimeSpan.FromSeconds(3));
+            }
             catch (Exception exception) { CrashLog.Record("Audit close", exception); }
         }
 
@@ -355,7 +362,17 @@ public partial class App : Application
 
     private async void OnBackgroundSyncTick(object? sender, EventArgs args)
     {
-        if (_syncViewModel is { IsBusy: false } viewModel) await viewModel.SyncEstateAsync();
+        // An exception escaping an async void handler takes the process down with it. The sync
+        // itself already reports its own failures, so anything reaching here is a defect and must
+        // still not kill a running session.
+        try
+        {
+            if (_syncViewModel is { IsBusy: false } viewModel) await viewModel.SyncEstateAsync();
+        }
+        catch (Exception exception)
+        {
+            CrashLog.Record("Background sync", exception);
+        }
     }
 
     private void ApplyTheme(AppTheme theme) => RequestedThemeVariant = theme switch
