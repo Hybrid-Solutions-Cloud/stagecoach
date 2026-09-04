@@ -3,6 +3,27 @@
 All notable changes to Stagecoach are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.2]
+
+### Fixed
+
+- **The machine list failed with "data is NULL at ordinal 16" on any installation upgraded from
+  before 0.6.0.** `SupportsEntraLogin` was added with `ALTER TABLE ADD COLUMN`, which appends to the
+  end of the table, so an upgraded database has a different column order than a newly created one.
+  Reads and writes both worked by position, so every value after the discovery timestamp lined up
+  against the wrong field — the list could not load, and each rescan wrote flags into the wrong
+  columns. Both sides now name their columns.
+- **An Entra owner was asked to sign in on every start.** The existing sign-in is checked first, and
+  a prompt only appears when it has genuinely expired.
+- **Unlock could dead-end on a Microsoft Entra joined machine.** The signed-in account is a cloud
+  account, which `LogonUser` cannot validate with a password, so the credential prompt could not
+  tell a correct password from a wrong one — and Windows Hello cannot prompt over RDP at all. The
+  unlock screen now offers to continue as the Windows account it has already matched by SID.
+
+### Changed
+
+- First-run setup no longer mentions another product by name.
+
 ## [0.6.1]
 
 ### Removed
