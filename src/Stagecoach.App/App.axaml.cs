@@ -85,6 +85,11 @@ public partial class App : Application
                 if (viewModel.StartMinimized) HideToTray(window);
             };
 
+            // Windows Installer cannot replace a running executable, so an update closes the
+            // application once elevation has been granted. This is the one shutdown that bypasses
+            // the live-session guard, because the operator has already confirmed it.
+            viewModel.ShutdownForUpdateRequested += () => Dispatcher.UIThread.Post(() => Exit(desktop));
+
             window.Closing += (_, args) =>
             {
                 if (_allowExit) return;

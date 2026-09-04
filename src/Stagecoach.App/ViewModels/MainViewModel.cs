@@ -74,6 +74,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private IdentityRow? _selectedIdentity;
     [ObservableProperty] private MachineRow? _selectedMachine;
     [ObservableProperty] private string _newIdentityName = string.Empty;
+    [ObservableProperty] private string _renameIdentityText = string.Empty;
 
     [ObservableProperty] private FilterOption? _selectedTenantFilter;
     [ObservableProperty] private FilterOption? _selectedSubscriptionFilter;
@@ -253,11 +254,20 @@ public partial class MainViewModel : ObservableObject
                 var identity = await _identityService.AddAsync(NewIdentityName, useDeviceCode, progress);
                 NewIdentityName = string.Empty;
                 SelectedIdentity = Identities.FirstOrDefault(item => item.Profile.Id == identity.Id);
-                StatusMessage = identity.LastErrorCategory == "subscription_discovery_failed"
-                    ? $"{identity.DisplayName} is connected, but its subscriptions could not be listed. " +
-                      "Open Connect identities and choose Refresh available scope."
-                    : $"{identity.DisplayName} connected. Choose the tenants and subscriptions to scan.";
+                StatusMessage = $"{identity.DisplayName} connected. Choose the tenants and subscriptions to scan.";
                 SelectedTabIndex = 1;
+
+                // Enumerating scope is part of adding an account, not a separate chore. When the
+                // attempt inside AddAsync failed, retry it here so the operator does not have to
+                // discover "Refresh available scope" on their own — and so the real reason reaches
+                // the error banner and the log instead of being swallowed.
+                if (identity.LastErrorCategory == "subscription_discovery_failed")
+                {
+                    StatusMessage = $"{identity.DisplayName} connected. Listing tenants and subscriptions…";
+                    var inventory = await _identityService.RefreshInventoryAsync(identity);
+                    await _store.UpsertIdentityInventoryAsync(inventory);
+                    StatusMessage = $"{identity.DisplayName} connected. Choose the tenants and subscriptions to scan.";
+                }
             }
             finally
             {
@@ -324,6 +334,67 @@ public partial class MainViewModel : ObservableObject
             await _store.UpsertDiscoveryAsync(result);
             await ReloadMachinesAsync();
             StatusMessage = $"{identity.DisplayName} rescanned — {Machines.Count} machines";
+        });
+    }
+
+    /// <summary>Renames the selected account. Only the local label changes; the Azure account does not.</summary>
+    [RelayCommand]
+    private async Task RenameIdentityAsync()
+    {
+        if (SelectedIdentity is not { } row) { StatusMessage = "Select an account first."; return; }
+        var name = RenameIdentityText.Trim();
+        if (name.Length == 0) { StatusMessage = "Enter a name for this account."; return; }
+
+        await RunBusyAsync($"Renaming {row.DisplayName}", async () =>
+        {
+            await _store.UpsertIdentityAsync(row.Profile with { DisplayName = name });
+            var id = row.Profile.Id;
+            await ReloadIdentitiesAsync();
+            SelectedIdentity = Identities.FirstOrDefault(item => item.Profile.Id == id);
+            RenameIdentityText = string.Empty;
+            StatusMessage = $"Renamed to {name}.";
+        });
+    }
+
+    [RelayCommand]
+    private Task IncludeAllTenantsAsync() => SetAllTenantsAsync(true);
+
+    [RelayCommand]
+    private Task ExcludeAllTenantsAsync() => SetAllTenantsAsync(false);
+
+    [RelayCommand]
+    private Task IncludeAllSubscriptionsAsync() => SetAllSubscriptionsAsync(true);
+
+    [RelayCommand]
+    private Task ExcludeAllSubscriptionsAsync() => SetAllSubscriptionsAsync(false);
+
+    private async Task SetAllTenantsAsync(bool enabled)
+    {
+        if (SelectedIdentity is not { } row) { StatusMessage = "Select an account first."; return; }
+        var identityId = row.Profile.Id;
+        await RunBusyAsync(enabled ? "Including every tenant" : "Excluding every tenant", async () =>
+        {
+            foreach (var tenant in Tenants.ToArray())
+                await _store.SetTenantEnabledAsync(identityId, tenant.TenantId, enabled);
+            await LoadScopeAsync(identityId);
+            StatusMessage = enabled
+                ? $"All {Tenants.Count} tenants included."
+                : "All tenants excluded.";
+        });
+    }
+
+    private async Task SetAllSubscriptionsAsync(bool enabled)
+    {
+        if (SelectedIdentity is not { } row) { StatusMessage = "Select an account first."; return; }
+        var identityId = row.Profile.Id;
+        await RunBusyAsync(enabled ? "Including every subscription" : "Excluding every subscription", async () =>
+        {
+            foreach (var subscription in Subscriptions.ToArray())
+                await _store.SetSubscriptionEnabledAsync(identityId, subscription.SubscriptionId, enabled);
+            await LoadScopeAsync(identityId);
+            StatusMessage = enabled
+                ? $"All {Subscriptions.Count} subscriptions included. Rescan machines to discover them."
+                : "All subscriptions excluded.";
         });
     }
 
@@ -788,17 +859,42 @@ public partial class MainViewModel : ObservableObject
         });
     }
 
+    /// <summary>
+    /// Raised once Windows Installer has actually started and elevation was granted, so the shell
+    /// can close Stagecoach. Windows cannot replace a running executable in place, so staying open
+    /// means the upgrade fails on locked files or demands a reboot.
+    /// </summary>
+    public event Action? ShutdownForUpdateRequested;
+
     [RelayCommand]
     private async Task InstallUpdateAsync()
     {
         if (_verifiedUpdate is not { } update) { StatusMessage = "Download the update first."; return; }
+
+        // Installing closes Stagecoach, which tears down every helper process it owns.
+        if (ActiveSessionCount > 0 && !_updateWillCloseSessionsAcknowledged)
+        {
+            _updateWillCloseSessionsAcknowledged = true;
+            UpdateStatus =
+                $"Installing will close Stagecoach and end {ActiveSessionCount} running session(s). " +
+                "Choose Install update again to continue.";
+            StatusMessage = UpdateStatus;
+            RaiseError("Sessions are still running", UpdateStatus);
+            return;
+        }
+
         await RunBusyAsync("Starting Windows Installer", async () =>
         {
+            // Only returns once the elevation prompt was accepted; a cancelled prompt throws, so
+            // Stagecoach stays open rather than closing for an install that never began.
             await _updates.LaunchAsync(update);
-            UpdateStatus = "Windows Installer is running. Stagecoach restarts after the upgrade.";
+            UpdateStatus = "Windows Installer is running. Stagecoach is closing so it can be replaced.";
             StatusMessage = UpdateStatus;
+            ShutdownForUpdateRequested?.Invoke();
         });
     }
+
+    private bool _updateWillCloseSessionsAcknowledged;
 
     [RelayCommand]
     private async Task SaveSettingsAsync()
@@ -831,6 +927,7 @@ public partial class MainViewModel : ObservableObject
     partial void OnSelectedIdentityChanged(IdentityRow? value)
     {
         OnPropertyChanged(nameof(ActiveIdentityContext));
+        RenameIdentityText = value?.DisplayName ?? string.Empty;
         if (value is null) return;
 
         // Fire-and-forget, so it must never throw into an unobserved task: an escaped exception

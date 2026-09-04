@@ -41,7 +41,10 @@ public sealed class ResourceGraphDiscoveryService(IAzureCliRunner cli) : IEstate
             string? skipToken = null;
             do
             {
-                var arguments = new List<string> { "graph", "query", "--query", Query, "--first", "1000", "--output", "json", "--subscriptions" };
+                // The KQL goes in --graph-query. "--query" is Azure CLI's *global* JMESPath output
+                // filter, so passing the query there failed every single run with
+                // "invalid jmespath_type value" and the estate could never populate.
+                var arguments = new List<string> { "graph", "query", "--graph-query", Query, "--first", "1000", "--output", "json", "--subscriptions" };
                 arguments.AddRange(batch);
                 if (!string.IsNullOrWhiteSpace(skipToken))
                 {
@@ -51,7 +54,15 @@ public sealed class ResourceGraphDiscoveryService(IAzureCliRunner cli) : IEstate
 
                 var result = await cli.RunAsync(identity.AzureConfigDirectory, arguments, cancellationToken);
                 if (!result.Succeeded)
-                    throw new InvalidOperationException("Azure Resource Graph discovery failed for this identity. Review its selected subscriptions and permissions.");
+                {
+                    var detail = result.StandardError
+                        .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .LastOrDefault(line => line.Length > 0 && !line.StartsWith("WARNING", StringComparison.OrdinalIgnoreCase));
+                    throw new InvalidOperationException(
+                        "Azure Resource Graph discovery failed for this identity." +
+                        (detail is null ? string.Empty : $" Azure CLI reported: {detail}") +
+                        " Review its selected subscriptions and permissions.");
+                }
                 (var page, skipToken) = ParsePage(result.StandardOutput);
                 resources.AddRange(page);
             } while (!string.IsNullOrWhiteSpace(skipToken));

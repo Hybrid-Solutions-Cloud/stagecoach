@@ -200,13 +200,43 @@
       <Setter Property="Background" Value="{DynamicResource StagecoachAccentBrush}" />
       <Setter Property="Foreground" Value="White" />
     </Style>
+    <!-- Selected and hovered rows must keep dark text. The theme's own selected foreground is
+         white, which on these light cards made a selected row's content vanish entirely — the
+         connected-account card looked empty apart from its buttons. -->
     <Style Selector="ListBoxItem">
       <Setter Property="Foreground" Value="{DynamicResource StageColorInk}" />
       <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
     </Style>
-    <Style Selector="ListBoxItem:selected">
+    <Style Selector="ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource StageColorInk}" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource StageColorSurfaceAlt}" />
+      <Setter Property="Foreground" Value="{DynamicResource StageColorInk}" />
+    </Style>
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource StageColorAccentSoft}" />
       <Setter Property="Foreground" Value="{DynamicResource StageColorInk}" />
+    </Style>
+    <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource StageColorAccentSoft}" />
+      <Setter Property="Foreground" Value="{DynamicResource StageColorInk}" />
+    </Style>
+    <Style Selector="ListBoxItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource StageColorAccentSoft}" />
+      <Setter Property="Foreground" Value="{DynamicResource StageColorInk}" />
+    </Style>
+
+    <!-- The default overlay scroll bar is invisible until touched, so a clipped list looked simply
+         truncated. Keep it always expanded on the scoped lists. -->
+    <Style Selector="ScrollBar">
+      <Setter Property="AllowAutoHide" Value="False" />
+    </Style>
+    <Style Selector="ScrollBar:vertical">
+      <Setter Property="MinWidth" Value="12" />
     </Style>
 
     <!-- Left product navigation. This is what separates a product shell from a tabbed dialog. -->

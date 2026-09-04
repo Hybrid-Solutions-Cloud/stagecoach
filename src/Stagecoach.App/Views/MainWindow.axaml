@@ -42,8 +42,12 @@
         <Border Grid.Row="1" Background="{DynamicResource StageColorContext}"
                 BorderBrush="{DynamicResource StageColorLine}" BorderThickness="0,1,0,0" Padding="20,9">
           <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="16">
-            <TextBlock Text="ACTIVE ACCOUNT" Foreground="{DynamicResource StageColorMuted}"
-                       FontSize="{StaticResource StageFontSize11}" FontWeight="Bold" VerticalAlignment="Center" />
+            <!-- This is the Entra account currently selected for discovery, not a sign-in to
+                 Stagecoach itself. Labelling it "active account" read as an application login and
+                 misrepresented where the security boundary actually is. -->
+            <TextBlock Text="DISCOVERING AS" Foreground="{DynamicResource StageColorMuted}"
+                       FontSize="{StaticResource StageFontSize11}" FontWeight="Bold" VerticalAlignment="Center"
+                       ToolTip.Tip="The connected Entra account whose scope you are viewing. Stagecoach itself is protected by your Windows sign-in." />
             <Border Grid.Column="1" Background="{DynamicResource StageColorSurface}"
                     BorderBrush="{DynamicResource StageColorLineStrong}" BorderThickness="1" Padding="10,6">
               <StackPanel Orientation="Horizontal" Spacing="8">
@@ -408,18 +412,26 @@
                 </Border>
 
                 <ListBox ItemsSource="{Binding Identities}" SelectedItem="{Binding SelectedIdentity}"
-                         Background="Transparent" BorderThickness="0"
+                         Background="Transparent" BorderThickness="0" MaxHeight="260"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
                          AutomationProperties.Name="Connected Entra accounts">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:IdentityRow">
+                      <!-- Foreground is set explicitly on every line. Inheriting it let the theme's
+                           white selected-row foreground blank the card out completely. -->
                       <Border Classes="card" Margin="0,0,0,8">
-                        <Grid ColumnDefinitions="*,Auto">
-                          <StackPanel>
-                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding AccountName}" Opacity="0.7" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Text="{Binding State}" FontSize="{StaticResource StageFontSize11}" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                          <StackPanel Spacing="2">
+                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource StageColorInk}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding AccountName}"
+                                       Foreground="{DynamicResource StageColorMuted}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding State}" FontSize="{StaticResource StageFontSize11}"
+                                       Foreground="{DynamicResource StageColorMuted}" />
                           </StackPanel>
-                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top">
+                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <Button Content="Reauth"
                                     Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ReauthenticateCommand}"
                                     CommandParameter="{Binding}" />
@@ -432,6 +444,16 @@
                     </DataTemplate>
                   </ListBox.ItemTemplate>
                 </ListBox>
+
+                <Border Classes="panel" IsVisible="{Binding SelectedIdentity, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="section-title" Text="Rename this account" />
+                    <TextBlock Text="Only the label Stagecoach shows. The Microsoft account is unchanged."
+                               FontSize="{StaticResource StageFontSize11}" Opacity="0.75" TextWrapping="Wrap" />
+                    <TextBox Text="{Binding RenameIdentityText}" PlaceholderText="Customer, employer, lab…" />
+                    <Button Content="Save name" Command="{Binding RenameIdentityCommand}" HorizontalAlignment="Left" />
+                  </StackPanel>
+                </Border>
               </StackPanel>
 
               <StackPanel Grid.Column="1" Spacing="14">
@@ -449,18 +471,38 @@
 
                 <Border Classes="panel">
                   <StackPanel Spacing="8">
-                    <TextBlock Classes="section-title" Text="Tenants" />
-                    <ListBox ItemsSource="{Binding Tenants}" MaxHeight="200" Background="Transparent" BorderThickness="0"
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                      <TextBlock Classes="section-title" VerticalAlignment="Center"
+                                 Text="{Binding Tenants.Count, StringFormat='Tenants ({0})'}" />
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                        <Button Content="Include all" Command="{Binding IncludeAllTenantsCommand}" />
+                        <Button Content="Exclude all" Command="{Binding ExcludeAllTenantsCommand}" />
+                      </StackPanel>
+                    </Grid>
+                    <!-- Fixed columns so the state and the action line up down the list, and an
+                         always-visible scroll bar so a long list does not just look truncated. -->
+                    <Grid ColumnDefinitions="*,90,130" Margin="10,0,22,0">
+                      <TextBlock Classes="column-header" Text="TENANT" />
+                      <TextBlock Grid.Column="1" Classes="column-header" Text="STATE" />
+                      <TextBlock Grid.Column="2" Classes="column-header" Text="" />
+                    </Grid>
+                    <ListBox ItemsSource="{Binding Tenants}" MaxHeight="220" Background="Transparent" BorderThickness="0"
+                             ScrollViewer.VerticalScrollBarVisibility="Visible"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              AutomationProperties.Name="Discovered tenants">
                       <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:TenantRow">
-                          <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,5" ColumnSpacing="10">
-                            <StackPanel>
-                              <TextBlock Text="{Binding DisplayName}" />
-                              <TextBlock Text="{Binding TenantId}" FontSize="10" Opacity="0.55" />
+                          <Grid ColumnDefinitions="*,90,130" Margin="10,6" ColumnSpacing="8">
+                            <StackPanel Spacing="1" VerticalAlignment="Center">
+                              <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource StageColorInk}"
+                                         TextTrimming="CharacterEllipsis" />
+                              <TextBlock Text="{Binding TenantId}" FontSize="10"
+                                         Foreground="{DynamicResource StageColorMuted}"
+                                         TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-                            <TextBlock Grid.Column="1" Text="{Binding Selection}" VerticalAlignment="Center" />
-                            <Button Grid.Column="2" Content="Include / exclude"
+                            <TextBlock Grid.Column="1" Text="{Binding Selection}" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource StageColorMuted}" />
+                            <Button Grid.Column="2" Content="Include / exclude" HorizontalAlignment="Stretch"
                                     Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ToggleTenantCommand}"
                                     CommandParameter="{Binding}" />
                           </Grid>
@@ -472,18 +514,36 @@
 
                 <Border Classes="panel">
                   <StackPanel Spacing="8">
-                    <TextBlock Classes="section-title" Text="Subscriptions" />
-                    <ListBox ItemsSource="{Binding Subscriptions}" MaxHeight="240" Background="Transparent" BorderThickness="0"
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                      <TextBlock Classes="section-title" VerticalAlignment="Center"
+                                 Text="{Binding Subscriptions.Count, StringFormat='Subscriptions ({0})'}" />
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                        <Button Content="Include all" Command="{Binding IncludeAllSubscriptionsCommand}" />
+                        <Button Content="Exclude all" Command="{Binding ExcludeAllSubscriptionsCommand}" />
+                      </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,90,130" Margin="10,0,22,0">
+                      <TextBlock Classes="column-header" Text="SUBSCRIPTION" />
+                      <TextBlock Grid.Column="1" Classes="column-header" Text="STATE" />
+                      <TextBlock Grid.Column="2" Classes="column-header" Text="" />
+                    </Grid>
+                    <ListBox ItemsSource="{Binding Subscriptions}" MaxHeight="300" Background="Transparent" BorderThickness="0"
+                             ScrollViewer.VerticalScrollBarVisibility="Visible"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              AutomationProperties.Name="Discovered subscriptions">
                       <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:SubscriptionRow">
-                          <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,5" ColumnSpacing="10">
-                            <StackPanel>
-                              <TextBlock Text="{Binding DisplayName}" />
-                              <TextBlock Text="{Binding SubscriptionId}" FontSize="10" Opacity="0.55" />
+                          <Grid ColumnDefinitions="*,90,130" Margin="10,6" ColumnSpacing="8">
+                            <StackPanel Spacing="1" VerticalAlignment="Center">
+                              <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource StageColorInk}"
+                                         TextTrimming="CharacterEllipsis" />
+                              <TextBlock Text="{Binding SubscriptionId}" FontSize="10"
+                                         Foreground="{DynamicResource StageColorMuted}"
+                                         TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-                            <TextBlock Grid.Column="1" Text="{Binding Selection}" VerticalAlignment="Center" />
-                            <Button Grid.Column="2" Content="Include / exclude"
+                            <TextBlock Grid.Column="1" Text="{Binding Selection}" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource StageColorMuted}" />
+                            <Button Grid.Column="2" Content="Include / exclude" HorizontalAlignment="Stretch"
                                     Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ToggleSubscriptionCommand}"
                                     CommandParameter="{Binding}" />
                           </Grid>
@@ -662,8 +722,22 @@
                   <Button Classes="primary" Content="Install update"
                           Command="{Binding InstallUpdateCommand}" IsEnabled="{Binding IsUpdateReadyToInstall}" />
                 </StackPanel>
+                <TextBlock TextWrapping="Wrap" Opacity="0.75" FontSize="{StaticResource StageFontSize11}"
+                           Text="Installing closes Stagecoach so Windows can replace it, then offers to start it again. Any running sessions end." />
                 <TextBlock Text="Updates are only accepted from the signed Stagecoach release repository and are SHA-256 verified before Windows Installer runs."
                            FontSize="{StaticResource StageFontSize11}" Opacity="0.7" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="panel">
+              <StackPanel Spacing="10">
+                <TextBlock Classes="section-title" Text="How your data is protected" />
+                <TextBlock TextWrapping="Wrap" Opacity="0.85"
+                           Text="Stagecoach has no sign-in of its own. Access to it is your Windows sign-in: everything it stores is encrypted with a key only your Windows account can unwrap, so another account on this machine cannot read it, and copying the files to another machine makes them useless." />
+                <TextBlock TextWrapping="Wrap" Opacity="0.75" FontSize="{StaticResource StageFontSize11}"
+                           Text="Estate metadata is held in a SQLCipher-encrypted database whose key is protected by Windows DPAPI for your user. Local account passwords are kept only in Windows Credential Manager. Azure tokens stay in each connected account's own isolated, Windows-encrypted Azure CLI cache. Connected Entra accounts are for discovering and reaching machines — they are not a login to Stagecoach." />
+                <TextBlock TextWrapping="Wrap" Opacity="0.75" FontSize="{StaticResource StageFontSize11}"
+                           Text="This does not protect against someone using your unlocked Windows session. Lock Windows when you step away." />
               </StackPanel>
             </Border>
 

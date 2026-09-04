@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Wix
   xmlns="http://wixtoolset.org/schemas/v4/wxs"
-  xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+  xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package
     Name="Stagecoach"
     Manufacturer="Hybrid Solutions Cloud"
@@ -33,6 +34,19 @@
       Id="WIXUI_EXITDIALOGOPTIONALTEXT"
       Value="Stagecoach needs the Azure CLI, the Windows OpenSSH client, and Remote Desktop Connection. Open it and connect a Microsoft Entra account to get started." />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Stagecoach" />
+
+    <!-- Upgrading while Stagecoach is open otherwise leaves Windows Installer unable to replace
+         locked files, which surfaces as a files-in-use prompt or a demand to reboot. Close the
+         application first; the operator is asked before this happens in the in-app path, and the
+         finish dialog offers to start it again. -->
+    <util:CloseApplication
+      Id="CloseRunningStagecoach"
+      Target="Stagecoach.App.exe"
+      Description="Stagecoach must close before it can be updated."
+      CloseMessage="yes"
+      ElevatedCloseMessage="yes"
+      RebootPrompt="no"
+      Timeout="20" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Stagecoach" />
