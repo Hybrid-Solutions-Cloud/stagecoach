@@ -63,15 +63,17 @@ public partial class PassphraseRemovalWindow : Window
                     Close();
                     return;
                 }
-                catch (CryptographicException exception)
+                catch (Exception exception)
                 {
-                    // The passphrase was right but the key is wrapped with something else, so this
-                    // installation cannot be recovered by typing. Say so, and leave Start fresh.
+                    // The passphrase was right but the removal could not be completed — the key is
+                    // wrapped with something else, or the record could not be written. Either way
+                    // this must report, not crash the window it is the only way past.
                     CrashLog.Record("Passphrase removal", exception);
-                    error.Text =
-                        "That passphrase is correct, but the database key on this machine is protected " +
-                        "with something else and cannot be unwrapped. Use Start fresh — your machines " +
-                        "are rediscovered on the next scan.";
+                    error.Text = exception is CryptographicException
+                        ? "That passphrase is correct, but the database key on this machine is protected " +
+                          "with something else and cannot be unwrapped. Use Start fresh — your machines " +
+                          "are rediscovered on the next scan."
+                        : $"The passphrase could not be removed: {exception.Message}";
                     error.IsVisible = true;
                     return;
                 }

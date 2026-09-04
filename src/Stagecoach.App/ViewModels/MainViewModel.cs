@@ -445,16 +445,24 @@ public partial class MainViewModel : ObservableObject
     private async Task ToggleTenantAsync(TenantRow? row)
     {
         if (row is null || SelectedIdentity is null) return;
-        await _store.SetTenantEnabledAsync(SelectedIdentity.Profile.Id, row.TenantId, !row.IsEnabled);
-        await LoadScopeAsync(SelectedIdentity.Profile.Id);
+        var identityId = SelectedIdentity.Profile.Id;
+        await RunGuardedAsync($"Changing tenant {row.DisplayName}", async () =>
+        {
+            await _store.SetTenantEnabledAsync(identityId, row.TenantId, !row.IsEnabled);
+            await LoadScopeAsync(identityId);
+        });
     }
 
     [RelayCommand]
     private async Task ToggleSubscriptionAsync(SubscriptionRow? row)
     {
         if (row is null || SelectedIdentity is null) return;
-        await _store.SetSubscriptionEnabledAsync(SelectedIdentity.Profile.Id, row.SubscriptionId, !row.IsEnabled);
-        await LoadScopeAsync(SelectedIdentity.Profile.Id);
+        var identityId = SelectedIdentity.Profile.Id;
+        await RunGuardedAsync($"Changing subscription {row.DisplayName}", async () =>
+        {
+            await _store.SetSubscriptionEnabledAsync(identityId, row.SubscriptionId, !row.IsEnabled);
+            await LoadScopeAsync(identityId);
+        });
     }
 
     [RelayCommand]
@@ -525,8 +533,11 @@ public partial class MainViewModel : ObservableObject
     private async Task ToggleFavoriteAsync(MachineRow? row)
     {
         if (row is null) return;
-        await _store.SetFavoriteAsync(row.Machine.ResourceId, !row.Machine.IsFavorite);
-        await ReloadMachinesAsync();
+        await RunGuardedAsync($"Changing favourite for {row.Name}", async () =>
+        {
+            await _store.SetFavoriteAsync(row.Machine.ResourceId, !row.Machine.IsFavorite);
+            await ReloadMachinesAsync();
+        });
     }
 
     [RelayCommand]
@@ -565,17 +576,23 @@ public partial class MainViewModel : ObservableObject
     {
         if (EditorMachine is not { } row) return;
         var accountId = EditorAccount?.Profile.Id;
-        await _store.SetMachinePinAsync(row.Machine.ResourceId, accountId);
-        if (EditorRoute is not null) row.SelectedRoute = EditorRoute;
-        IsMachineEditorOpen = false;
-        await ReloadMachinesAsync();
-        await RecordAsync(
-            AuditCategory.Estate,
-            accountId is null ? $"Unpinned the local account for {row.Name}" : $"Pinned a local account to {row.Name}",
-            accountId is null ? null : EditorAccount!.DisplayName);
-        StatusMessage = accountId is null
-            ? $"{row.Name} will ask which local account to use."
-            : $"{EditorAccount!.DisplayName} pinned to {row.Name}. It will not ask again.";
+        var accountName = EditorAccount?.DisplayName;
+        await RunGuardedAsync($"Saving {row.Name}", async () =>
+        {
+            await _store.SetMachinePinAsync(row.Machine.ResourceId, accountId);
+            if (EditorRoute is not null) row.SelectedRoute = EditorRoute;
+            IsMachineEditorOpen = false;
+            await ReloadMachinesAsync();
+            await RecordAsync(
+                AuditCategory.Estate,
+                accountId is null
+                    ? $"Unpinned the local account for {row.Name}"
+                    : $"Pinned a local account to {row.Name}",
+                accountName);
+            StatusMessage = accountId is null
+                ? $"{row.Name} will ask which local account to use."
+                : $"{accountName} pinned to {row.Name}. It will not ask again.";
+        });
     }
 
     [RelayCommand]
@@ -632,12 +649,14 @@ public partial class MainViewModel : ObservableObject
     {
         if (PickerMachine is not { } row || PickerAccount is not { } account) return;
         IsAccountPickerOpen = false;
-        if (PickerRemember)
+        await RunGuardedAsync($"Pinning {account.DisplayName} to {row.Name}", async () =>
         {
+            if (!PickerRemember) return;
             await _store.SetMachinePinAsync(row.Machine.ResourceId, account.Profile.Id);
             _pins[row.Machine.StableKey] = account.Profile.Id;
             row.ApplyPin(account.Profile.Id, account.DisplayName);
-        }
+            await RecordAsync(AuditCategory.Estate, $"Pinned a local account to {row.Name}", account.DisplayName);
+        });
 
         if (row.SelectedPath is { } path) await LaunchAsync(row, path, account);
     }
@@ -785,9 +804,12 @@ public partial class MainViewModel : ObservableObject
     private async Task StopSessionAsync(SessionRow? row)
     {
         if (row is null) return;
-        await _connections.StopAsync(row.Session.Id);
-        await ReloadSessionsAsync();
-        await RecordAsync(AuditCategory.Connection, "Session stopped", row.Machine);
+        await RunGuardedAsync($"Stopping the session for {row.Machine}", async () =>
+        {
+            await _connections.StopAsync(row.Session.Id);
+            await ReloadSessionsAsync();
+            await RecordAsync(AuditCategory.Connection, "Session stopped", row.Machine);
+        });
     }
 
     [RelayCommand]
@@ -1146,6 +1168,16 @@ public partial class MainViewModel : ObservableObject
     {
         IsQuickConnectOpen = false;
         QuickResults.Clear();
+
+        // Cancelling discarded nothing: the throwaway profile, with its Azure token cache, stayed on
+        // disk until Quick Connect happened to be opened again, and the typed password stayed in
+        // memory. A one-off connection that was abandoned must leave even less behind than one that
+        // went ahead.
+        QuickPassword = string.Empty;
+        QuickUsername = string.Empty;
+        QuickSignedIn = false;
+        QuickAccountName = string.Empty;
+        DiscardQuickProfile();
     }
 
     // ---------------------------------------------------------------- Lock, portability, activity
@@ -1309,10 +1341,12 @@ public partial class MainViewModel : ObservableObject
         _verifiedUpdate = null;
         AvailableUpdate = null;
         UpdateStatus = "Checking…";
-        try
+
+        // Runs through the busy gate like everything else. Setting IsBusy directly meant that
+        // finishing this check cleared the gate even when another operation was still running,
+        // letting two things run at once and re-enabling every button under the first one.
+        await RunBusyAsync("Checking for a new Stagecoach release", async () =>
         {
-            IsBusy = true;
-            StatusMessage = "Checking for a new Stagecoach release";
             var release = await _updates.CheckAsync();
             AvailableUpdate = release;
             UpdateStatus = release.Availability switch
@@ -1327,17 +1361,13 @@ public partial class MainViewModel : ObservableObject
                 _ => "Update state is unknown.",
             };
             StatusMessage = UpdateStatus;
-        }
-        catch (Exception exception)
+        });
+
+        // RunBusyAsync reports and records the failure; the update panel still has to say so, or the
+        // button appears to have done nothing.
+        if (AvailableUpdate is null && UpdateStatus == "Checking…")
         {
-            CrashLog.Record("Update check", exception);
-            UpdateStatus = $"Update check failed. {SafeMessage(exception)}";
-            StatusMessage = UpdateStatus;
-            RaiseError("Could not check for updates", UpdateStatus);
-        }
-        finally
-        {
-            IsBusy = false;
+            UpdateStatus = $"Update check failed. {StatusMessage}";
         }
     }
 
@@ -1397,13 +1427,14 @@ public partial class MainViewModel : ObservableObject
     private bool _updateWillCloseSessionsAcknowledged;
 
     [RelayCommand]
-    private async Task SaveSettingsAsync()
-    {
-        await _settingsStore.SaveAsync(new AppSettings(
-            SelectedTheme, SelectedAccent, MinimizeToNotificationArea, SelectedCloseBehavior,
-            BackgroundSyncEnabled, Math.Clamp(BackgroundSyncMinutes, 5, 1440), StartMinimized));
-        StatusMessage = "Settings saved.";
-    }
+    private async Task SaveSettingsAsync() =>
+        await RunGuardedAsync("Saving settings", async () =>
+        {
+            await _settingsStore.SaveAsync(new AppSettings(
+                SelectedTheme, SelectedAccent, MinimizeToNotificationArea, SelectedCloseBehavior,
+                BackgroundSyncEnabled, Math.Clamp(BackgroundSyncMinutes, 5, 1440), StartMinimized));
+            StatusMessage = "Settings saved.";
+        });
 
     [RelayCommand]
     private void DismissError()
@@ -1717,6 +1748,27 @@ public partial class MainViewModel : ObservableObject
             BusyMessage = string.Empty;
             IsBusy = false;
             OnPropertyChanged(nameof(CanCancelBusy));
+        }
+    }
+
+    /// <summary>
+    /// For short actions that should not take the busy gate — toggles, pins, stopping a session —
+    /// but must still report a failure. These used to call the store bare from an async command, so
+    /// a storage error became an unobserved exception: the row simply did not change and nothing
+    /// was said.
+    /// </summary>
+    private async Task RunGuardedAsync(string message, Func<Task> operation)
+    {
+        try
+        {
+            await operation();
+        }
+        catch (Exception exception)
+        {
+            CrashLog.Record(message, exception);
+            StatusMessage = SafeMessage(exception);
+            RaiseError("That did not complete", StatusMessage);
+            await RecordAsync(AuditCategory.Application, $"Failed: {message}", StatusMessage);
         }
     }
 

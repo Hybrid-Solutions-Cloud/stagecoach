@@ -78,9 +78,13 @@ public partial class OwnerSetupWindow : Window
                 _result.TrySetResult(true);
                 Close();
             }
-            catch (InvalidOperationException exception)
+            catch (Exception exception)
             {
-                Fail(error, exception.Message);
+                // Writing the owner record can fail for reasons that are not InvalidOperationException
+                // — a redirected folder, antivirus, a permission change. Catching only that type left
+                // first-run setup crashing outright at the final click.
+                CrashLog.Record("Owner setup", exception);
+                Fail(error, ViewModels.MainViewModel.SafeMessage(exception));
             }
         };
 

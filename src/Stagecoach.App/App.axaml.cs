@@ -251,7 +251,13 @@ public partial class App : Application
             viewModel.SelectedTabIndex = 3;
             Show();
         };
-        sync.Click += async (_, _) => await viewModel.SyncEstateAsync();
+        // An async handler on a menu item is async void: anything escaping it would take the process
+        // down, and the notification area is exactly where sessions are running unattended.
+        sync.Click += async (_, _) =>
+        {
+            try { await viewModel.SyncEstateAsync(); }
+            catch (Exception exception) { CrashLog.Record("Tray sync", exception); }
+        };
         exit.Click += (_, _) =>
         {
             // Exiting kills every helper process, so a live session earns one confirmation.
