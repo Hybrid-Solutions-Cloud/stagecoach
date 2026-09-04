@@ -1,84 +1,59 @@
 # Handoff
 
-## Session 2026-09-02 — interface rebuilt around the operator workflow
+**Session:** 2026-09-04 · **Branch:** `main` · **Head:** `c2044c0` · **Released:** v0.6.1
 
-### Branch
+## What changed
 
-`main`, from `7b615f4`.
+**Stagecoach no longer has an application passphrase.** The operator rejected it outright — *"I did
+not do this for prospector. I am not doing this for this app."* — after 0.5.0 added an optional
+passphrase lock and 0.6.0 made one mandatory.
 
-### Why
+Vault Prospector was read properly this time rather than guessed at. It has **no typed secret**: the
+database key comes from `WindowsDataProtectionKeyProvider` (DPAPI, Windows-account bound), and
+unlock is a presence check — `UserConsentVerifier`, falling through to
+`CredUIPromptForWindowsCredentials` + `LogonUser` + a SID comparison when Hello cannot prompt, which
+inside a remote session it never can. Stagecoach now matches that.
 
-The delivered application built cleanly but did not match the accepted design's UX section or the
-way the operator actually works. Audit findings that drove this session: no landing behaviour on
-the estate, no details panel, search-only filtering with none of the required filters, the
-remediation preview parked in Settings, and a mapping rule engine standing between the operator and
-a connection. The window also had a 1080x680 minimum, which cannot fit a laptop display or a
-windowed RDP session.
+## Files touched
 
-### Delivered
+- `src/Stagecoach.App/Security/AppOwner.cs` — passphrase removed; `owner.json` v2; legacy read kept
+  only for migration.
+- `src/Stagecoach.App/Security/WindowsCredentialVerifier.cs` — **new**, ported from Prospector.
+  Synchronous on the UI thread on purpose (modal Win32 dialog).
+- `src/Stagecoach.App/Security/LocalState.cs` — **new**, backs "Start fresh".
+- `src/Stagecoach.App/Views/UnlockWindow.axaml{,.cs}` — verification-only, auto-prompts on open.
+- `src/Stagecoach.App/Views/PassphraseRemovalWindow.axaml{,.cs}` — **new**, the one-time migration.
+- `src/Stagecoach.App/Views/OwnerSetupWindow.axaml{,.cs}` — passphrase fields removed.
+- `src/Stagecoach.App/AppLock.cs` — **deleted**, with its Settings UI.
+- `src/Stagecoach.App/App.axaml.cs` — new startup gate with the interrupt-safe migration probe.
+- `docs/about/changelog.md`, `docs/about/releases.md` — filled in 0.3.0 → 0.6.1 (were stuck at 0.2.0).
 
-- **Machines is the landing screen.** The application opens on the machine list. An operator with
-  no account connected gets an inline pointer to Connect identities instead of a wizard.
-- **Real filtering.** Tenant, subscription, source (Azure / Arc / Azure Local), OS, and state
-  dropdowns, plus Favorites / Ready only / Pinned toggles, a search box, and Reset. Tenant and
-  subscription are now columns as well as filters.
-- **Pinned local accounts.** `Edit` on a machine pins a stored account, so that machine connects on
-  the first click. Unpinned machines ask once, from a list, and remember. Credentials are never
-  typed at connect time. New `MachinePins` table with cascade delete from `ConnectionIdentities`.
-- **One account for both Arc hops.** `MainViewModel.LaunchAsync` passes the same account as target
-  and relay, so an Arc RDP session never prompts for a local administrator account twice. This
-  supersedes design section 2.3; ADR-005 records the decision.
-- **Local accounts** replace the mapping-rule builder. Account type is inferred from the username
-  format rather than a dropdown.
-- **Session-aware lifecycle.** New `WindowLifecyclePolicy` holds the decisions as pure statics.
-  The tray shows a live session count, Exit requires confirmation while sessions run, and closing
-  the window never tears down live sessions regardless of the close behaviour setting.
-- **In-app updates.** `GitHubReleaseUpdateService` ported from Vault Prospector with every control
-  intact: publisher check, mandatory Sigstore bundle, withdrawn-release kill switch, trusted URI
-  prefixes, streamed incremental hashing against the authenticated digest, contained update
-  directory, reparse-point rejection, and a second hash immediately before launch. ADR-006.
-- **Shell rebuilt on the Prospector pattern.** Full design-token set, `TabControl.product-shell`
-  left navigation, header band with an active-account context strip, an accessible error banner,
-  and a status bar. The machine list is an aligned `ListBox` rather than a `DataGrid`.
-- **Laptop and RDP fitness.** Minimum window size 320x300, compact density, flat opaque surfaces
-  with no corner radius, and every screen inside a scroll viewer.
-- Documentation rewritten to match, including new interface, updates, download, and scripts pages,
-  ADR-005 and ADR-006, and an amendment note on ADR-002. Six dead ADR navigation entries left over
-  from the superseded PowerShell design were removed.
+## Bug found and fixed on the way
 
-### Verification
+`AppLock.Enable` rewrapped the metadata key with entropy derived from its own passphrase, while
+startup after 0.6.0 supplied only `AppOwner`'s. **Enabling the Settings lock would have made the
+database key impossible to unwrap on the next launch.** Deleted rather than repaired.
 
-| Check | Result |
-|---|---|
-| `dotnet build Stagecoach.sln -c Release` | Succeeded, 0 warnings, 0 errors |
-| `dotnet test Stagecoach.sln -c Release` | 39 passed, 0 failed (was 12) |
-| `dotnet format --verify-no-changes --no-restore` | Clean |
-| `dotnet list package --vulnerable --include-transitive` | None across all five projects |
-| `git diff --check` | Clean |
-| `npm run docs:build` | Build complete, no dead links |
-| Application launch | Window titled `Stagecoach`, responsive, no exceptions |
-| `scripts/Package.ps1 -Version 0.1.0 -Installer` | ZIP, SHA-256 sidecar, and MSI produced |
+## Commands run
 
-### Gotcha worth remembering
+- `dotnet build` — clean, 0 warnings.
+- `dotnet test` — **81 passed**, including `RemovingTheLegacyPassphraseLeavesTheEstateReadable`,
+  which exercises the migration against real DPAPI plus the interrupted case.
+- `dotnet format --verify-no-changes` — clean.
+- `./scripts/Package.ps1 -Version 0.6.1 -Installer`; release published via the GitHub App token,
+  install ID **131587716**.
 
-Packaging failed with `Access to the path 'Avalonia.Base.dll' is denied` because a stale
-`Stagecoach.App.exe` from a previous session was still running out of `artifacts/publish-win-x64`.
-Stop any running instance before packaging.
+## Not verified
 
-### Not done
+First-run setup, the Windows Hello prompt, the Windows credential prompt, and the Entra owner
+sign-in have not been driven by hand — they need an interactive session, and the operator's own
+machine is never to be touched.
 
-- **No live Azure validation.** Entra sign-in, subscription discovery, Bastion correlation, Arc and
-  Azure Local routes, credential staging, Conditional Access behaviour, and OpenSSH deployment all
-  require representative authorized resources. A green build is not evidence for any of them, and
-  no work item should be closed on it.
-- **No GitHub release exists yet**, so the download page's `releases/latest` links will 404 until
-  one is published.
-- The in-app updater requires the release pipeline to publish the MSI, its `.sha256` sidecar, and a
-  `.sigstore.json` bundle under the publishing app identity. Until then, update checks correctly
-  report that no trusted release was found. Do not relax the checks to work around this.
+**Live Azure connection validation remains the standing gap:** Bastion tunnels, Arc RDP-over-SSH,
+and `TERMSRV` credential staging have never been exercised against a real machine.
 
-### Next
+## Next
 
-1. Publish the 0.1.0 release with the MSI, ZIP, and checksums.
-2. Stand up the `stagecoach-releases` publishing pipeline including Sigstore bundles.
-3. Run the live validation matrix in `pmo/plans/stagecoach-implementation-plan.md`.
+1. Operator updates in-app to 0.6.1 and confirms the unlock behaves.
+2. Live connection validation.
+3. Authenticode signing so `RequireProvenanceBundle` can return to `true`.
