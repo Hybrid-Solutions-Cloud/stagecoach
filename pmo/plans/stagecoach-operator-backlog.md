@@ -49,6 +49,32 @@ requested features, then open questions. Nothing here is closed on a green build
 | F | Export and import settings to move to another laptop | **Not started** |
 | G | Application-level protection like Prospector's secure unlock | **Not started** — see below |
 
+### H — Quick Connect (requested 2026-09-03, not started)
+
+A one-off connection that saves nothing. Button opens a short prompt chain:
+
+1. Authenticate to a tenant.
+2. Ask for a subscription — **optional**.
+3. Ask whether the target is reached through **Azure Bastion** or **Azure Arc**.
+4. Ask for a resource name.
+5. If it is an Arc machine, ask for the local account.
+6. Connect.
+
+Fallbacks:
+- No subscription given → scan the tenant's subscriptions, then look for the resource name across them.
+- No resource name given → list every Azure VM, or every Arc machine, depending on the choice at
+  step 3, and let the operator pick.
+
+Nothing is persisted: no identity, no pin, no scope, no estate row. It is a throwaway path beside
+the saved estate, for reaching something once without setting it up.
+
+### I — Tenant exclusion cascades to subscriptions (fixed, pending release)
+
+Excluding a tenant now greys out its subscriptions, marks them "Tenant excluded", disables their
+toggle, and — the part that actually mattered — removes them from what discovery scans. Previously
+`DiscoverAsync` filtered only on the subscription's own flag, so a subscription left enabled under
+an excluded tenant would still have been queried.
+
 ## Open questions
 
 **G — application sign-in.** Stagecoach currently has no unlock of its own. Its data is bound to the

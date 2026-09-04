@@ -77,6 +77,25 @@ public partial class App : Application
 
             window.Opened += async (_, _) =>
             {
+                // The unlock gate runs before anything reads the database, because the passphrase is
+                // what unwraps its key. Quitting here leaves the estate unread.
+                if (AppLock.IsEnabled)
+                {
+                    var unlock = new UnlockWindow { Icon = _icon };
+                    window.Hide();
+                    unlock.Show();
+                    var entropy = await unlock.Result;
+                    if (entropy is null)
+                    {
+                        Exit(desktop);
+                        return;
+                    }
+
+                    store.UseAdditionalEntropy(entropy);
+                    window.Show();
+                    window.Activate();
+                }
+
                 await viewModel.InitializeAsync();
                 ApplyTheme(viewModel.SelectedTheme);
                 ApplyAccent(viewModel.SelectedAccent);

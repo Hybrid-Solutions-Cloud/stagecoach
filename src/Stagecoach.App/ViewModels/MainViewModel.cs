@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Stagecoach.Core;
+using Stagecoach.Infrastructure.Storage;
 
 namespace Stagecoach.App.ViewModels;
 
@@ -204,6 +205,7 @@ public partial class MainViewModel : ObservableObject
             await ReloadLocalAccountsAsync();
             await ReloadMachinesAsync();
             await ReloadSessionsAsync();
+            await RefreshAuditAsync();
 
             // The machine list is always the landing screen. An operator with no identity yet is
             // told what to do rather than being dropped into a settings surface.
@@ -329,10 +331,14 @@ public partial class MainViewModel : ObservableObject
         var identity = SelectedIdentity;
         await RunBusyAsync($"Rescanning machines for {identity.DisplayName}", async () =>
         {
-            var subscriptions = await _store.GetSubscriptionsAsync(identity.Profile.Id);
+            var subscriptions = await GetScannableSubscriptionsAsync(identity.Profile.Id);
             var result = await _discovery.DiscoverAsync(identity.Profile, subscriptions);
             await _store.UpsertDiscoveryAsync(result);
             await ReloadMachinesAsync();
+            await RecordAsync(
+                AuditCategory.Discovery,
+                $"Rescanned {identity.DisplayName}",
+                $"{subscriptions.Count} subscription(s) in scope, {result.Machines.Count} machine(s) found");
             StatusMessage = $"{identity.DisplayName} rescanned — {Machines.Count} machines";
         });
     }
@@ -424,7 +430,7 @@ public partial class MainViewModel : ObservableObject
             {
                 try
                 {
-                    var subscriptions = await _store.GetSubscriptionsAsync(row.Profile.Id);
+                    var subscriptions = await GetScannableSubscriptionsAsync(row.Profile.Id);
                     var result = await _discovery.DiscoverAsync(row.Profile, subscriptions);
                     await _store.UpsertDiscoveryAsync(result);
                 }
@@ -596,6 +602,10 @@ public partial class MainViewModel : ObservableObject
         {
             await _connections.ConnectAsync(row.Machine, path, azureIdentity, account?.Profile, account?.Profile);
             await ReloadSessionsAsync();
+            await RecordAsync(
+                AuditCategory.Connection,
+                $"Connected to {row.Name}",
+                $"{DescribeRoute(path.Route)}; local account {account?.DisplayName ?? "not required"}");
             StatusMessage = $"{row.Name} — {DescribeRoute(path.Route)} started";
         });
     }
@@ -752,6 +762,114 @@ public partial class MainViewModel : ObservableObject
     /// operator can attach to a support request. Nothing from the database, the isolated Azure CLI
     /// profiles, or Windows Credential Manager is included.
     /// </summary>
+    // ---------------------------------------------------------------- Lock, portability, activity
+
+    public ObservableCollection<AuditRow> AuditEvents { get; } = [];
+
+    public bool IsLockEnabled => AppLock.IsEnabled;
+    public string LockStatus => AppLock.IsEnabled
+        ? "Stagecoach asks for a passphrase at startup, and that passphrase protects the database key."
+        : "No passphrase is set. Anyone at your unlocked Windows session can open Stagecoach.";
+
+    [ObservableProperty] private string _lockPassphrase = string.Empty;
+    [ObservableProperty] private string _lockPassphraseConfirm = string.Empty;
+    [ObservableProperty] private string _portablePath = string.Empty;
+
+    [RelayCommand]
+    private async Task EnableLockAsync()
+    {
+        if (!string.Equals(LockPassphrase, LockPassphraseConfirm, StringComparison.Ordinal))
+        {
+            StatusMessage = "The two passphrases do not match.";
+            RaiseError("Passphrases do not match", StatusMessage);
+            return;
+        }
+
+        var passphrase = LockPassphrase;
+        await RunBusyAsync("Setting the unlock passphrase", async () =>
+        {
+            AppLock.ValidatePassphrase(passphrase);
+            var entropy = AppLock.Enable(passphrase);
+            // Re-wrap the existing key so the passphrase is genuinely required from now on, rather
+            // than the gate being a window that could be bypassed by reading the files directly.
+            if (_store is EncryptedSqliteMetadataStore store) store.RewrapKey(entropy);
+            LockPassphrase = LockPassphraseConfirm = string.Empty;
+            await RecordAsync(AuditCategory.Identity, "Unlock passphrase enabled");
+            OnPropertyChanged(nameof(IsLockEnabled));
+            OnPropertyChanged(nameof(LockStatus));
+            StatusMessage = "Unlock passphrase set. It is required the next time Stagecoach starts.";
+        });
+    }
+
+    [RelayCommand]
+    private async Task DisableLockAsync()
+    {
+        await RunBusyAsync("Removing the unlock passphrase", async () =>
+        {
+            if (_store is EncryptedSqliteMetadataStore store) store.RewrapKey(null);
+            AppLock.Disable();
+            await RecordAsync(AuditCategory.Identity, "Unlock passphrase removed");
+            OnPropertyChanged(nameof(IsLockEnabled));
+            OnPropertyChanged(nameof(LockStatus));
+            StatusMessage = "Unlock passphrase removed. Stagecoach is protected by your Windows sign-in only.";
+        });
+    }
+
+    [RelayCommand]
+    private async Task ExportSettingsAsync()
+    {
+        await RunBusyAsync("Exporting settings", async () =>
+        {
+            var settings = new AppSettings(
+                SelectedTheme, SelectedAccent, MinimizeToNotificationArea, SelectedCloseBehavior,
+                BackgroundSyncEnabled, Math.Clamp(BackgroundSyncMinutes, 5, 1440), StartMinimized);
+            var path = await PortableSettings.ExportAsync(_store, settings, PortableSettings.DefaultExportPath);
+            PortablePath = path;
+            await RecordAsync(AuditCategory.Identity, "Settings exported", Path.GetFileName(path));
+            StatusMessage = $"Exported to {path}. It contains no passwords, tokens, or keys.";
+        });
+    }
+
+    [RelayCommand]
+    private async Task ImportSettingsAsync()
+    {
+        var path = PortablePath.Trim();
+        if (path.Length == 0) { StatusMessage = "Enter the path of a settings export to import."; return; }
+
+        await RunBusyAsync("Importing settings", async () =>
+        {
+            var (accounts, pins) = await PortableSettings.ImportAsync(_store, _settingsStore, path);
+            await ReloadLocalAccountsAsync();
+            await ReloadMachinesAsync();
+            await RecordAsync(AuditCategory.Identity, "Settings imported",
+                $"{accounts} local account(s), {pins} pinned machine(s)");
+            StatusMessage =
+                $"Imported {accounts} local account(s) and {pins} pin(s). Re-enter each account's password " +
+                "and sign your Entra accounts in again.";
+        });
+    }
+
+    [RelayCommand]
+    private async Task RefreshAuditAsync()
+    {
+        AuditEvents.Clear();
+        foreach (var item in await _store.GetRecentAuditAsync(200)) AuditEvents.Add(new AuditRow(item));
+    }
+
+    /// <summary>Appends one activity entry. Never called with a credential, token, or resource id.</summary>
+    private async Task RecordAsync(AuditCategory category, string summary, string? detail = null)
+    {
+        try
+        {
+            await _store.AppendAuditAsync(new AuditEvent(Guid.NewGuid(), DateTimeOffset.Now, category, summary, detail));
+            await RefreshAuditAsync();
+        }
+        catch (Exception exception)
+        {
+            CrashLog.Record("Audit append", exception);
+        }
+    }
+
     [RelayCommand]
     private async Task CreateSupportBundleAsync()
     {
@@ -972,11 +1090,35 @@ public partial class MainViewModel : ObservableObject
 
     private async Task LoadScopeAsync(Guid identityId)
     {
+        var tenants = await _store.GetTenantsAsync(identityId);
+        var includedTenants = tenants
+            .Where(item => item.IsEnabled)
+            .Select(item => item.TenantId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         Tenants.Clear();
-        foreach (var item in await _store.GetTenantsAsync(identityId)) Tenants.Add(new TenantRow(item));
+        foreach (var item in tenants) Tenants.Add(new TenantRow(item));
         Subscriptions.Clear();
-        foreach (var item in await _store.GetSubscriptionsAsync(identityId)) Subscriptions.Add(new SubscriptionRow(item));
+        foreach (var item in await _store.GetSubscriptionsAsync(identityId))
+            Subscriptions.Add(new SubscriptionRow(item, includedTenants.Contains(item.TenantId)));
         RefreshSetupState();
+    }
+
+    /// <summary>
+    /// Subscriptions that would actually be scanned: enabled, and under an enabled tenant.
+    /// Excluding a tenant has to exclude everything beneath it, otherwise a subscription left
+    /// enabled under an excluded tenant would still be queried.
+    /// </summary>
+    private async Task<IReadOnlyList<SubscriptionScope>> GetScannableSubscriptionsAsync(Guid identityId)
+    {
+        var includedTenants = (await _store.GetTenantsAsync(identityId))
+            .Where(item => item.IsEnabled)
+            .Select(item => item.TenantId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return (await _store.GetSubscriptionsAsync(identityId))
+            .Where(item => includedTenants.Contains(item.TenantId))
+            .ToArray();
     }
 
     private async Task ReloadMachinesAsync()
@@ -1222,13 +1364,27 @@ public sealed record TenantRow(TenantScope Scope)
     public string Selection => IsEnabled ? "Included" : Scope.RequiresReview ? "Review" : "Excluded";
 }
 
-public sealed record SubscriptionRow(SubscriptionScope Scope)
+/// <summary>
+/// A subscription and whether its tenant is included. Excluding a tenant excludes everything under
+/// it, so a subscription there is shown greyed out and cannot be toggled — leaving it looking
+/// available implied it would be scanned when it never would be.
+/// </summary>
+public sealed record SubscriptionRow(SubscriptionScope Scope, bool IsTenantIncluded = true)
 {
     public string SubscriptionId => Scope.SubscriptionId;
     public string DisplayName => Scope.DisplayName;
     public string State => Scope.State;
     public bool IsEnabled => Scope.IsEnabled;
-    public string Selection => IsEnabled ? "Included" : Scope.RequiresReview ? "Review" : "Excluded";
+
+    /// <summary>True only when this subscription would actually be scanned.</summary>
+    public bool IsEffectivelyIncluded => IsTenantIncluded && IsEnabled;
+
+    public bool CanToggle => IsTenantIncluded;
+    public double RowOpacity => IsTenantIncluded ? 1.0 : 0.45;
+
+    public string Selection => !IsTenantIncluded
+        ? "Tenant excluded"
+        : IsEnabled ? "Included" : Scope.RequiresReview ? "Review" : "Excluded";
 }
 
 public partial class MachineRow : ObservableObject
@@ -1344,4 +1500,12 @@ public sealed record SessionRow(ConnectionSession Session)
     public string State => Session.State.ToString();
     public string Started => Session.StartedAt.LocalDateTime.ToString("g");
     public string Detail => Session.SafeStatus ?? string.Empty;
+}
+
+public sealed record AuditRow(AuditEvent Event)
+{
+    public string When => Event.OccurredAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
+    public string Category => Event.Category.ToString();
+    public string Summary => Event.Summary;
+    public string Detail => Event.Detail ?? string.Empty;
 }

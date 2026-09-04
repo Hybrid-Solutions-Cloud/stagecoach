@@ -181,6 +181,27 @@ public sealed record DiscoveryResult(
     DateTimeOffset CompletedAt,
     IReadOnlyList<string> SafeWarnings);
 
+public enum AuditCategory
+{
+    Identity,
+    Scope,
+    Discovery,
+    Connection,
+    Remediation,
+    Update,
+}
+
+/// <summary>
+/// One recorded action, for the activity log. Deliberately free of credentials, tokens, and
+/// resource identifiers: it answers "what happened and when", not "what is in the estate".
+/// </summary>
+public sealed record AuditEvent(
+    Guid Id,
+    DateTimeOffset OccurredAt,
+    AuditCategory Category,
+    string Summary,
+    string? Detail = null);
+
 public sealed record CommandResult(
     int ExitCode,
     string StandardOutput,

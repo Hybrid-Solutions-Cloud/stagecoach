@@ -21,6 +21,17 @@ public sealed class ResourceGraphDiscoveryService(IAzureCliRunner cli) : IEstate
         | project id, name, type, tenantId, subscriptionId, resourceGroup, location, kind, tags, sku, properties
         """;
 
+    /// <summary>
+    /// The query as a single line. On Windows the Azure CLI is <c>az.cmd</c>, a batch file, so the
+    /// command line is re-parsed by cmd.exe — and a newline inside an argument truncates it there.
+    /// Passing the query with line breaks silently dropped the <c>where</c> clause, so Resource
+    /// Graph returned every resource in scope instead of the ten types wanted, paged through
+    /// hundreds of thousands of rows, and eventually failed.
+    /// </summary>
+    private static readonly string SingleLineQuery = string.Join(
+        ' ',
+        Query.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
     public async Task<DiscoveryResult> DiscoverAsync(
         AzureIdentityProfile identity,
         IReadOnlyList<SubscriptionScope> subscriptions,
@@ -44,7 +55,7 @@ public sealed class ResourceGraphDiscoveryService(IAzureCliRunner cli) : IEstate
                 // The KQL goes in --graph-query. "--query" is Azure CLI's *global* JMESPath output
                 // filter, so passing the query there failed every single run with
                 // "invalid jmespath_type value" and the estate could never populate.
-                var arguments = new List<string> { "graph", "query", "--graph-query", Query, "--first", "1000", "--output", "json", "--subscriptions" };
+                var arguments = new List<string> { "graph", "query", "--graph-query", SingleLineQuery, "--first", "1000", "--output", "json", "--subscriptions" };
                 arguments.AddRange(batch);
                 if (!string.IsNullOrWhiteSpace(skipToken))
                 {

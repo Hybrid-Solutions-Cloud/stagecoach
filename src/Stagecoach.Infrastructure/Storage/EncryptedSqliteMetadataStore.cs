@@ -119,6 +119,14 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
                 IsRelayIdentity INTEGER NOT NULL,
                 FOREIGN KEY (ConnectionIdentityId) REFERENCES ConnectionIdentities(Id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS AuditEvents (
+                Id TEXT PRIMARY KEY,
+                OccurredAt TEXT NOT NULL,
+                Category INTEGER NOT NULL,
+                Summary TEXT NOT NULL,
+                Detail TEXT NULL
+            );
+            CREATE INDEX IF NOT EXISTS IX_AuditEvents_OccurredAt ON AuditEvents(OccurredAt DESC);
             CREATE TABLE IF NOT EXISTS MachinePins (
                 ResourceId TEXT PRIMARY KEY,
                 ConnectionIdentityId TEXT NOT NULL,
@@ -377,6 +385,48 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task AppendAuditAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(auditEvent);
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO AuditEvents (Id, OccurredAt, Category, Summary, Detail)
+            VALUES ($id,$at,$category,$summary,$detail);
+            DELETE FROM AuditEvents WHERE Id NOT IN (
+                SELECT Id FROM AuditEvents ORDER BY OccurredAt DESC LIMIT 2000);
+            """;
+        Add(command, "$id", auditEvent.Id.ToString("D"));
+        Add(command, "$at", auditEvent.OccurredAt.ToString("O"));
+        Add(command, "$category", (int)auditEvent.Category);
+        Add(command, "$summary", auditEvent.Summary);
+        Add(command, "$detail", auditEvent.Detail);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<AuditEvent>> GetRecentAuditAsync(
+        int maximumEvents = 200, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT Id, OccurredAt, Category, Summary, Detail FROM AuditEvents ORDER BY OccurredAt DESC LIMIT $limit";
+        Add(command, "$limit", Math.Clamp(maximumEvents, 1, 2000));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var results = new List<AuditEvent>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add(new AuditEvent(
+                Guid.Parse(reader.GetString(0)),
+                DateTimeOffset.Parse(reader.GetString(1), System.Globalization.CultureInfo.InvariantCulture),
+                (AuditCategory)reader.GetInt32(2),
+                reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4)));
+        }
+
+        return results;
+    }
+
     public async Task<IReadOnlyDictionary<string, Guid>> GetMachinePinsAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
@@ -449,19 +499,65 @@ public sealed class EncryptedSqliteMetadataStore : IMetadataStore
         return connection;
     }
 
+    /// <summary>
+    /// Extra entropy mixed into the DPAPI protection of the metadata key. When an unlock passphrase
+    /// is configured this carries a value derived from it, so the key cannot be unwrapped by the
+    /// Windows account alone — being at an unlocked session is then not enough to read the estate.
+    /// </summary>
+    private byte[] _additionalEntropy = [];
+
+    public void UseAdditionalEntropy(byte[]? entropy)
+    {
+        _additionalEntropy = entropy is { Length: > 0 } ? [.. entropy] : [];
+        _keyHex = null;
+    }
+
+    /// <summary>Re-wraps the existing key under new entropy, for enabling, changing, or removing the lock.</summary>
+    public void RewrapKey(byte[]? newEntropy)
+    {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Stagecoach metadata protection requires Windows.");
+        var key = Convert.FromHexString(_keyHex ??= LoadOrCreateKey());
+        var replacement = newEntropy is { Length: > 0 } ? newEntropy : [];
+        var reprotected = ProtectedData.Protect(key, Entropy(replacement), DataProtectionScope.CurrentUser);
+        File.WriteAllBytes(_keyPath, reprotected);
+        _additionalEntropy = [.. replacement];
+    }
+
+    private byte[] Entropy(byte[] additional)
+    {
+        if (additional.Length == 0) return KeyEntropy;
+        var combined = new byte[KeyEntropy.Length + additional.Length];
+        KeyEntropy.CopyTo(combined, 0);
+        additional.CopyTo(combined, KeyEntropy.Length);
+        return combined;
+    }
+
     private string LoadOrCreateKey()
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Stagecoach metadata protection requires Windows.");
+        var entropy = Entropy(_additionalEntropy);
         if (File.Exists(_keyPath))
         {
             var protectedKey = File.ReadAllBytes(_keyPath);
-            var key = ProtectedData.Unprotect(protectedKey, KeyEntropy, DataProtectionScope.CurrentUser);
+            byte[] key;
+            try
+            {
+                key = ProtectedData.Unprotect(protectedKey, entropy, DataProtectionScope.CurrentUser);
+            }
+            catch (CryptographicException exception)
+            {
+                throw new CryptographicException(
+                    "The Stagecoach metadata key could not be unwrapped. If an unlock passphrase is " +
+                    "configured, the wrong passphrase was supplied.", exception);
+            }
+
             if (key.Length != 32) throw new CryptographicException("The Stagecoach metadata key is invalid.");
             return Convert.ToHexString(key);
         }
+
         Directory.CreateDirectory(Path.GetDirectoryName(_keyPath) ?? ".");
         var generated = RandomNumberGenerator.GetBytes(32);
-        var protectedGenerated = ProtectedData.Protect(generated, KeyEntropy, DataProtectionScope.CurrentUser);
+        var protectedGenerated = ProtectedData.Protect(generated, entropy, DataProtectionScope.CurrentUser);
         using (var stream = new FileStream(_keyPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             stream.Write(protectedGenerated);
         return Convert.ToHexString(generated);

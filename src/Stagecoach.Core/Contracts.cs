@@ -85,6 +85,12 @@ public interface IMetadataStore
 
     /// <summary>Pins a local account to a machine, or clears the pin when <paramref name="connectionIdentityId"/> is null.</summary>
     Task SetMachinePinAsync(string resourceId, Guid? connectionIdentityId, CancellationToken cancellationToken = default);
+
+    /// <summary>Records one action in the activity log. Never called with credentials or tokens.</summary>
+    Task AppendAuditAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default);
+
+    /// <summary>Most recent activity first.</summary>
+    Task<IReadOnlyList<AuditEvent>> GetRecentAuditAsync(int maximumEvents = 200, CancellationToken cancellationToken = default);
 }
 
 public interface IEstateDiscoveryService
