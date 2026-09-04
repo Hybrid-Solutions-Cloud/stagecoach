@@ -72,6 +72,42 @@ public static class AppOwner
         return (identity.Name, identity.User?.Value ?? string.Empty);
     }
 
+    /// <summary>
+    /// The user principal name of the Windows account signed in right now, or null when it has none.
+    /// <para>
+    /// On a Microsoft Entra joined machine the Windows account <b>is</b> the Entra account, so this
+    /// is what makes signing in again unnecessary: Windows already authenticated this person against
+    /// Entra to create the session. Asking them to run an interactive sign-in on top of that proves
+    /// nothing new.
+    /// </para>
+    /// </summary>
+    public static string? CurrentWindowsUserPrincipalName()
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        try
+        {
+            var size = 0;
+            GetUserNameEx(NameUserPrincipal, null, ref size);
+            if (size <= 1) return null;
+
+            var builder = new System.Text.StringBuilder(size);
+            return GetUserNameEx(NameUserPrincipal, builder, ref size) && builder.Length > 0
+                ? builder.ToString()
+                : null;
+        }
+        catch (Exception exception) when (exception is EntryPointNotFoundException or DllNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    // EXTENDED_NAME_FORMAT.NameUserPrincipal
+    private const int NameUserPrincipal = 8;
+
+    [System.Runtime.InteropServices.DllImport("secur32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GetUserNameEx(int format, System.Text.StringBuilder? name, ref int size);
+
     /// <summary>Completes first-run setup. Nothing is derived and nothing is typed.</summary>
     public static void Configure(AppOwnerKind kind, string displayName, string? entraUserPrincipalName = null)
     {

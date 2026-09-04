@@ -186,12 +186,22 @@ public partial class UnlockWindow : Window
         status.IsVisible = true;
         try
         {
+            // On a Microsoft Entra joined machine the Windows account IS the owning Entra account,
+            // and Windows already authenticated it against Entra to create this session. There is
+            // nothing left to prove, so do not ask for a sign-in at all.
+            if (AppOwner.CurrentWindowsUserPrincipalName() is { Length: > 0 } windowsUpn &&
+                AppOwner.EntraAccountIsOwner(windowsUpn))
+            {
+                _result.TrySetResult(true);
+                Close();
+                return;
+            }
+
             var directory = AppOwner.EntraOwnerConfigDirectory;
             Directory.CreateDirectory(directory);
 
-            // The existing session first. Forcing a fresh interactive sign-in on every start meant
-            // being asked to log in again each time the application was opened, which is not a
-            // security gain — the profile is already proof this account signed in here.
+            // Then the existing Azure CLI session. Forcing a fresh interactive sign-in on every
+            // start is not a security gain — the profile is already proof this account signed in.
             status.Text = "Checking your sign-in…";
             if (await SignedInOwnerAsync(directory))
             {

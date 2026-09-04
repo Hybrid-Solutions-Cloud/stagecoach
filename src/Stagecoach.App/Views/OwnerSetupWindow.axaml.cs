@@ -34,6 +34,11 @@ public partial class OwnerSetupWindow : Window
 
         windowsText.Text = AppOwner.CurrentWindowsAccount().Name;
 
+        // On a Microsoft Entra joined machine the Windows account is already an Entra account, so
+        // choosing the Entra option needs no sign-in — Windows performed it to create this session.
+        _entraUpn = AppOwner.CurrentWindowsUserPrincipalName();
+        if (_entraUpn is { Length: > 0 }) entraText.Text = $"{_entraUpn} — already signed in to Windows";
+
         entraSignIn.Click += async (_, _) =>
         {
             entraSignIn.IsEnabled = false;
