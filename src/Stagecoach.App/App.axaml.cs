@@ -115,9 +115,12 @@ public partial class App : Application
                     setup.Show();
                     if (!await setup.Result)
                     {
+                        await RecordAsync(store, AuditCategory.Application, "First-run setup abandoned");
                         Exit(desktop);
                         return;
                     }
+
+                    await RecordAsync(store, AuditCategory.Application, "Owner configured", DescribeOwner());
                 }
                 else
                 {
@@ -125,6 +128,10 @@ public partial class App : Application
                     unlock.Show();
                     if (!await unlock.Result)
                     {
+                        // A sign-in that was never completed is itself worth recording — it is how a
+                        // refused or abandoned unlock becomes visible afterwards.
+                        await RecordAsync(
+                            store, AuditCategory.Application, "Sign-in not completed", DescribeOwner());
                         Exit(desktop);
                         return;
                     }
@@ -132,6 +139,8 @@ public partial class App : Application
 
                 window.Show();
                 window.Activate();
+                _auditStore = store;
+                await RecordAsync(store, AuditCategory.Application, "Signed in", DescribeOwner());
 
                 await viewModel.InitializeAsync();
                 ApplyTheme(viewModel.SelectedTheme);
@@ -281,10 +290,48 @@ public partial class App : Application
         window.Hide();
     }
 
+    /// <summary>The store, once the gate has been passed, so closing can be recorded too.</summary>
+    private IMetadataStore? _auditStore;
+
+    private static string DescribeOwner() => AppOwner.Current switch
+    {
+        { Kind: AppOwnerKind.EntraAccount } owner => $"Entra account {owner.EntraUserPrincipalName}",
+        { Kind: AppOwnerKind.WindowsAccount } owner => $"Windows account {owner.DisplayName}",
+        _ => "No owner configured",
+    };
+
+    /// <summary>
+    /// Writes one activity entry from outside the view model — signing in and closing both happen
+    /// where it does not exist. Never allowed to disturb what it is recording.
+    /// </summary>
+    private static async Task RecordAsync(
+        IMetadataStore store, AuditCategory category, string summary, string? detail = null)
+    {
+        try
+        {
+            await store.AppendAuditAsync(
+                new AuditEvent(Guid.NewGuid(), DateTimeOffset.Now, category, summary, detail));
+        }
+        catch (Exception exception)
+        {
+            CrashLog.Record("Audit append", exception);
+        }
+    }
+
     private void Exit(IClassicDesktopStyleApplicationLifetime desktop)
     {
         _allowExit = true;
         _syncTimer?.Stop();
+
+        // Recorded before shutdown begins, and waited for: an entry written on a background thread
+        // during teardown is a race, and the close is exactly the event that must not be missed.
+        if (_auditStore is { } store)
+        {
+            _auditStore = null;
+            try { RecordAsync(store, AuditCategory.Application, "Stagecoach closed").GetAwaiter().GetResult(); }
+            catch (Exception exception) { CrashLog.Record("Audit close", exception); }
+        }
+
         if (_trayIcon is not null)
         {
             _trayIcon.IsVisible = false;

@@ -462,23 +462,50 @@ public partial class MainViewModel : ObservableObject
     {
         await RunBusyAsync("Scanning included Azure scope", async () =>
         {
+            var accounts = Identities.Where(item => item.Profile.IsEnabled).ToList();
+            await RecordAsync(AuditCategory.Discovery, "Sync started", $"{accounts.Count} account(s) included");
+
             var failures = new List<string>();
-            foreach (var row in Identities.Where(item => item.Profile.IsEnabled))
+            foreach (var row in accounts)
             {
                 try
                 {
+                    // Heal tenants stored before display names were read, which show as a GUID in
+                    // every list. One extra call, and only when there is something to fix.
+                    var tenants = await _store.GetTenantsAsync(row.Profile.Id);
+                    if (tenants.Any(tenant =>
+                            string.Equals(tenant.DisplayName, tenant.TenantId, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var inventory = await _identityService.RefreshInventoryAsync(row.Profile);
+                        await _store.UpsertIdentityInventoryAsync(inventory);
+                    }
+
                     var subscriptions = await GetScannableSubscriptionsAsync(row.Profile.Id);
                     var result = await _discovery.DiscoverAsync(row.Profile, subscriptions);
                     await _store.UpsertDiscoveryAsync(result);
+                    await RecordAsync(
+                        AuditCategory.Discovery,
+                        $"Scanned {row.DisplayName}",
+                        $"{subscriptions.Count} subscription(s), {result.Machines.Count} machine(s) found");
                 }
-                catch (Exception)
+                catch (Exception exception)
                 {
-                    // One identity's failure never blocks the rest of the estate.
+                    // One identity's failure never blocks the rest of the estate — but it is recorded
+                    // rather than reduced to a name in a status line.
                     failures.Add(row.DisplayName);
+                    await RecordAsync(
+                        AuditCategory.Discovery, $"Scan failed for {row.DisplayName}", SafeMessage(exception));
                 }
             }
 
+            // Reloads the tenant and subscription name cache too, so healed names appear at once.
+            await ReloadIdentitiesAsync();
             await ReloadMachinesAsync();
+            await RecordAsync(
+                AuditCategory.Discovery,
+                "Sync finished",
+                $"{Machines.Count} machine(s) known, {failures.Count} account(s) failed");
+
             if (failures.Count == 0)
             {
                 StatusMessage = $"Sync complete — {Machines.Count} machines";
@@ -542,6 +569,10 @@ public partial class MainViewModel : ObservableObject
         if (EditorRoute is not null) row.SelectedRoute = EditorRoute;
         IsMachineEditorOpen = false;
         await ReloadMachinesAsync();
+        await RecordAsync(
+            AuditCategory.Estate,
+            accountId is null ? $"Unpinned the local account for {row.Name}" : $"Pinned a local account to {row.Name}",
+            accountId is null ? null : EditorAccount!.DisplayName);
         StatusMessage = accountId is null
             ? $"{row.Name} will ask which local account to use."
             : $"{EditorAccount!.DisplayName} pinned to {row.Name}. It will not ask again.";
@@ -698,6 +729,10 @@ public partial class MainViewModel : ObservableObject
             EditingAccountId = null;
             await ReloadLocalAccountsAsync();
             await ReloadMachinesAsync();
+            await RecordAsync(
+                AuditCategory.Estate,
+                $"{(existing is null ? "Added" : "Updated")} local account {profile.DisplayName}",
+                hasPassword ? "Password stored in Windows Credential Manager" : "No password change");
             StatusMessage = hasPassword
                 ? $"{profile.DisplayName} saved. The password is in Windows Credential Manager."
                 : $"{profile.DisplayName} saved.";
@@ -734,6 +769,10 @@ public partial class MainViewModel : ObservableObject
             await _store.RemoveConnectionIdentityAsync(row.Profile.Id);
             await ReloadLocalAccountsAsync();
             await ReloadMachinesAsync();
+            await RecordAsync(
+                AuditCategory.Estate,
+                $"Removed local account {row.DisplayName}",
+                pinnedTo == 0 ? null : $"{pinnedTo} machine(s) unpinned");
             StatusMessage = pinnedTo == 0
                 ? $"{row.DisplayName} removed."
                 : $"{row.DisplayName} removed. {pinnedTo} machine(s) will ask which account to use.";
@@ -748,6 +787,7 @@ public partial class MainViewModel : ObservableObject
         if (row is null) return;
         await _connections.StopAsync(row.Session.Id);
         await ReloadSessionsAsync();
+        await RecordAsync(AuditCategory.Connection, "Session stopped", row.Machine);
     }
 
     [RelayCommand]
@@ -1666,6 +1706,10 @@ public partial class MainViewModel : ObservableObject
             CrashLog.Record(message, exception);
             StatusMessage = SafeMessage(exception);
             RaiseError("That did not complete", StatusMessage);
+
+            // Every failure is audited, wherever it happens. Recording only what succeeded meant the
+            // activity log was at its emptiest exactly when something had gone wrong.
+            await RecordAsync(AuditCategory.Application, $"Failed: {message}", StatusMessage);
         }
         finally
         {

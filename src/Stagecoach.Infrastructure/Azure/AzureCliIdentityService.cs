@@ -181,7 +181,13 @@ public sealed class AzureCliIdentityService(IAzureCliRunner cli, IMetadataStore 
         foreach (var element in document.RootElement.EnumerateArray())
         {
             var tenantId = RequiredString(element, "tenantId");
-            var tenantName = OptionalString(element, "tenantDisplayName") ?? tenantId;
+
+            // Nobody recognises a tenant by its GUID. Take the display name, then the default
+            // domain, and only fall back to the identifier when the CLI offers neither.
+            var tenantName =
+                OptionalString(element, "tenantDisplayName") ??
+                OptionalString(element, "tenantDefaultDomain") ??
+                tenantId;
             if (!tenants.ContainsKey(tenantId))
             {
                 var known = existingTenants.GetValueOrDefault(tenantId);

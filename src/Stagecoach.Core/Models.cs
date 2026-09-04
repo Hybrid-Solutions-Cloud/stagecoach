@@ -195,6 +195,14 @@ public enum AuditCategory
     Connection,
     Remediation,
     Update,
+
+    // Appended, never reordered: the stored value is the number, and existing rows keep theirs.
+
+    /// <summary>Opening, unlocking, closing — and any action that failed.</summary>
+    Application,
+
+    /// <summary>Local accounts, pins, and other estate edits made by hand.</summary>
+    Estate,
 }
 
 /// <summary>
