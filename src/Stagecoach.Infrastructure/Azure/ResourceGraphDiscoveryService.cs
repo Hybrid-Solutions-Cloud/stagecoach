@@ -39,15 +39,76 @@ public sealed class ResourceGraphDiscoveryService(IAzureCliRunner cli) : IEstate
     {
         var selected = subscriptions
             .Where(item => item.IsEnabled && string.Equals(item.State, "Enabled", StringComparison.OrdinalIgnoreCase))
-            .Select(item => item.SubscriptionId)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .GroupBy(item => item.TenantId, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         if (selected.Length == 0)
             return new DiscoveryResult(identity.Id, [], DateTimeOffset.UtcNow, ["No enabled subscriptions are selected."]);
 
         var resources = new List<ArgResource>();
         var warnings = new List<string>();
-        foreach (var batch in selected.Chunk(100))
+        string? firstFailure = null;
+        var succeeded = false;
+
+        // One pass per tenant, never one pass over everything.
+        //
+        // Resource Graph answers only for the tenant the current token belongs to. Subscriptions
+        // from any other tenant are dropped from the request — silently, when they are mixed in with
+        // valid ones — so an account with access across several tenants saw only the machines in
+        // whichever tenant happened to be active. Verified against a real account: a query naming a
+        // subscription in another tenant returned nothing, and the identical query after switching
+        // to that tenant returned every machine in it.
+        foreach (var tenant in selected)
+        {
+            var tenantSubscriptions = tenant
+                .Select(item => item.SubscriptionId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            // Selecting a subscription is what moves the CLI's token to that tenant.
+            var activate = await cli.RunAsync(
+                identity.AzureConfigDirectory,
+                ["account", "set", "--subscription", tenantSubscriptions[0]],
+                cancellationToken);
+            if (!activate.Succeeded)
+            {
+                warnings.Add($"Tenant {tenant.Key} could not be selected, so its subscriptions were not scanned.");
+                firstFailure ??= FirstMeaningfulLine(activate.StandardError);
+                continue;
+            }
+
+            try
+            {
+                resources.AddRange(
+                    await QueryTenantAsync(identity, tenantSubscriptions, cancellationToken));
+                succeeded = true;
+            }
+            catch (InvalidOperationException exception)
+            {
+                // One tenant failing must not lose the machines in every other tenant.
+                warnings.Add($"Tenant {tenant.Key} could not be scanned: {exception.Message}");
+                firstFailure ??= exception.Message;
+            }
+        }
+
+        if (!succeeded)
+        {
+            throw new InvalidOperationException(
+                "Azure Resource Graph discovery failed for this identity." +
+                (firstFailure is null ? string.Empty : $" Azure CLI reported: {firstFailure}") +
+                " Review its selected subscriptions and permissions.");
+        }
+
+        var machines = Correlate(identity.Id, resources, DateTimeOffset.UtcNow, warnings);
+        return new DiscoveryResult(identity.Id, machines, DateTimeOffset.UtcNow, warnings);
+    }
+
+    private async Task<IReadOnlyList<ArgResource>> QueryTenantAsync(
+        AzureIdentityProfile identity,
+        IReadOnlyList<string> tenantSubscriptions,
+        CancellationToken cancellationToken)
+    {
+        var resources = new List<ArgResource>();
+        foreach (var batch in tenantSubscriptions.Chunk(100))
         {
             string? skipToken = null;
             do
@@ -65,23 +126,20 @@ public sealed class ResourceGraphDiscoveryService(IAzureCliRunner cli) : IEstate
 
                 var result = await cli.RunAsync(identity.AzureConfigDirectory, arguments, cancellationToken);
                 if (!result.Succeeded)
-                {
-                    var detail = result.StandardError
-                        .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                        .LastOrDefault(line => line.Length > 0 && !line.StartsWith("WARNING", StringComparison.OrdinalIgnoreCase));
                     throw new InvalidOperationException(
-                        "Azure Resource Graph discovery failed for this identity." +
-                        (detail is null ? string.Empty : $" Azure CLI reported: {detail}") +
-                        " Review its selected subscriptions and permissions.");
-                }
+                        FirstMeaningfulLine(result.StandardError) ?? "the Azure CLI reported no detail.");
+
                 (var page, skipToken) = ParsePage(result.StandardOutput);
                 resources.AddRange(page);
             } while (!string.IsNullOrWhiteSpace(skipToken));
         }
 
-        var machines = Correlate(identity.Id, resources, DateTimeOffset.UtcNow, warnings);
-        return new DiscoveryResult(identity.Id, machines, DateTimeOffset.UtcNow, warnings);
+        return resources;
     }
+
+    private static string? FirstMeaningfulLine(string error) => error
+        .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .LastOrDefault(line => line.Length > 0 && !line.StartsWith("WARNING", StringComparison.OrdinalIgnoreCase));
 
     internal static (IReadOnlyList<ArgResource> Resources, string? SkipToken) ParsePage(string json)
     {
