@@ -189,14 +189,6 @@ public sealed class ResourceGraphDiscoveryService(IAzureCliRunner cli) : IEstate
         var bastions = BuildBastions(resources);
         var extensions = resources.Where(item => item.Type.EndsWith("/extensions", StringComparison.OrdinalIgnoreCase)).ToArray();
 
-        // The machines that have a Microsoft.HybridConnectivity endpoint — the thing "az ssh arc"
-        // connects through. The endpoint is a child of the machine, so its parent is the machine id.
-        var sshEndpoints = resources
-            .Where(item => TypeIs(item, "microsoft.hybridconnectivity/endpoints"))
-            .Select(item => ParentResourceId(item.Id, "/providers/microsoft.hybridconnectivity/endpoints/"))
-            .Where(id => !string.IsNullOrEmpty(id))
-            .Select(id => Normalize(id!))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var localChildren = resources.Where(item => TypeIs(item, "microsoft.azurestackhci/virtualmachineinstances"))
             .ToDictionary(item => ParentHybridMachineId(item.Id), StringComparer.OrdinalIgnoreCase);
 
@@ -232,7 +224,7 @@ public sealed class ResourceGraphDiscoveryService(IAzureCliRunner cli) : IEstate
                 JsonPathString(effective.Properties, "extended", "instanceView", "powerState", "displayStatus"),
                 JsonPathString(effective.Properties, "status")) ?? "Unknown";
             var agentState = JsonPathString(effective.Properties, "status") ?? string.Empty;
-            var paths = BuildAccessPaths(identityId, effective, kind, os, network, bastions, peerings, extensions, sshEndpoints, agentState);
+            var paths = BuildAccessPaths(identityId, effective, kind, os, network, bastions, peerings, extensions, agentState);
             if (paths.Count == 0)
             {
                 warnings?.Add($"{name}: no supported connection route was discovered.");
@@ -267,24 +259,28 @@ public sealed class ResourceGraphDiscoveryService(IAzureCliRunner cli) : IEstate
         IReadOnlyList<BastionInfo> bastions,
         IReadOnlyDictionary<string, HashSet<string>> peerings,
         IReadOnlyList<ArgResource> extensions,
-        IReadOnlySet<string> sshEndpoints,
         string agentState)
     {
         var paths = new List<AzureAccessPath>();
         if (kind is MachineKind.ArcServer or MachineKind.AzureLocalVm)
         {
-            var connected = agentState.Contains("connected", StringComparison.OrdinalIgnoreCase);
-            // What "az ssh arc" actually needs is the machine's Microsoft.HybridConnectivity
-            // endpoint, not a particular extension. Demanding WindowsOpenSSH marked machines
-            // unreachable that connect perfectly well from a terminal: recent Windows Server ships
-            // OpenSSH itself, so the extension is one way to arrive at SSH and never a requirement.
-            var hasEndpoint = sshEndpoints.Contains(Normalize(machine.Id));
-            var hasSsh = hasEndpoint || HasExtension(machine.Id, extensions, "WindowsOpenSSH") || os == OperatingSystemKind.Linux;
-            var readiness = !connected ? ReadinessState.Offline : hasSsh ? ReadinessState.InteractionRequired : ReadinessState.MissingPrerequisite;
-            var reason = !connected ? "Azure Arc agent is not connected."
-                : hasEndpoint ? "Arc SSH endpoint is provisioned; target authentication may be required."
-                : hasSsh ? "Arc relay is available; target authentication may be required."
-                : "No Arc SSH endpoint was found for this machine. Connecting will still be attempted.";
+            // Equality, not a substring: "Disconnected" contains "connected", so a machine whose Arc
+            // agent had dropped was being reported as reachable.
+            var connected = string.Equals(agentState.Trim(), "Connected", StringComparison.OrdinalIgnoreCase);
+            // A connected Arc agent is the whole prerequisite, and it is the only part of this that
+            // Resource Graph can actually answer.
+            //
+            // Readiness first demanded a WindowsOpenSSH extension, then a Microsoft.HybridConnectivity
+            // endpoint. Both marked machines unusable that connect perfectly well by hand: recent
+            // Windows Server ships OpenSSH itself, and — verified against a live tenant — Resource
+            // Graph does not expose hybrid connectivity endpoints at all, so that second test could
+            // never pass for anyone. Guessing at reachability from data that cannot describe it is
+            // worse than not guessing: the connection attempt is the real test, and a helper that
+            // dies now reports what the Azure CLI said.
+            var readiness = connected ? ReadinessState.InteractionRequired : ReadinessState.Offline;
+            var reason = !connected
+                ? "Azure Arc agent is not connected."
+                : "Azure Arc agent is connected. SSH is established when you connect, and the machine may ask for the account to use.";
             if (os == OperatingSystemKind.Windows)
                 paths.Add(new AzureAccessPath(identityId, machine.TenantId, machine.SubscriptionId,
                     ConnectionRouteKind.ArcRdp, readiness, reason));

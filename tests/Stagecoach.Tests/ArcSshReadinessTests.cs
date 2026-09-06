@@ -33,28 +33,41 @@ public sealed class ArcSshReadinessTests
         var machine = Assert.Single(machines);
         var arcRdp = Assert.Single(machine.AccessPaths, path => path.Route == ConnectionRouteKind.ArcRdp);
 
-        // Not MissingPrerequisite: the endpoint is the prerequisite, and it is there.
+        // Not MissingPrerequisite. The endpoint is not what proves this — Resource Graph never
+        // returns one — but a machine that has one must certainly not be reported as unusable.
         Assert.Equal(ReadinessState.InteractionRequired, arcRdp.Readiness);
-        Assert.Contains("endpoint", arcRdp.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void WithoutAnEndpointTheMachineIsStillOfferedRatherThanDeclaredUnusable()
+    public void AConnectedArcMachineIsReachableWithNoExtensionsAtAll()
     {
+        // Resource Graph does not expose hybrid connectivity endpoints, and recent Windows Server
+        // ships OpenSSH itself, so neither can be used as evidence. A connected agent is the whole
+        // prerequisite; anything further is settled by attempting the connection.
         var machines = ResourceGraphDiscoveryService.Correlate(
             Guid.NewGuid(), [Machine()], DateTimeOffset.UtcNow);
 
         var machine = Assert.Single(machines);
         var arcRdp = Assert.Single(machine.AccessPaths, path => path.Route == ConnectionRouteKind.ArcRdp);
-        Assert.Equal(ReadinessState.MissingPrerequisite, arcRdp.Readiness);
-
-        // The wording no longer claims to know that SSH is absent — only that no endpoint was seen.
-        Assert.DoesNotContain("readiness was not detected", arcRdp.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ReadinessState.InteractionRequired, arcRdp.Readiness);
+        Assert.DoesNotContain("was not detected", arcRdp.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("no arc ssh endpoint", arcRdp.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static ResourceGraphDiscoveryService.ArgResource Machine() => new(
+    [Fact]
+    public void AnArcMachineWhoseAgentIsDisconnectedIsReportedOffline()
+    {
+        var machines = ResourceGraphDiscoveryService.Correlate(
+            Guid.NewGuid(), [Machine(status: "Disconnected")], DateTimeOffset.UtcNow);
+
+        var machine = Assert.Single(machines);
+        var arcRdp = Assert.Single(machine.AccessPaths, path => path.Route == ConnectionRouteKind.ArcRdp);
+        Assert.Equal(ReadinessState.Offline, arcRdp.Readiness);
+    }
+
+    private static ResourceGraphDiscoveryService.ArgResource Machine(string status = "Connected") => new(
         MachineId, "mgt-sdr-jmp-01", "microsoft.hybridcompute/machines", "t", "s", "rg", "eastus",
-        null, default, default, Props("""{"osName":"windows","status":"Connected"}"""));
+        null, default, default, Props($$"""{"osName":"windows","status":"{{status}}"}"""));
 
     private static ResourceGraphDiscoveryService.ArgResource Endpoint() => new(
         $"{MachineId}/providers/Microsoft.HybridConnectivity/endpoints/default", "default",

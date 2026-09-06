@@ -36,13 +36,19 @@ public sealed class ResourceGraphDiscoveryTests
     }
 
     [Fact]
-    public void Correlate_ConnectedWindowsArcWithoutOpenSsh_RequiresRemediation()
+    /// <summary>
+    /// This asserted the opposite until an operator reported a machine they could connect to by hand
+    /// being marked unusable. A connected Arc agent is the whole prerequisite Resource Graph can
+    /// speak to: it does not expose hybrid connectivity endpoints, and recent Windows Server ships
+    /// OpenSSH itself, so neither is evidence of anything.
+    /// </summary>
+    public void Correlate_ConnectedWindowsArcWithoutOpenSsh_IsOffered()
     {
         var arc = Resource("/subscriptions/s/resourceGroups/rg/providers/Microsoft.HybridCompute/machines/arc1", "arc1",
             "microsoft.hybridcompute/machines", "rg", Props("""{"osName":"Windows Server 2022","status":"Connected"}"""));
         var machine = Assert.Single(ResourceGraphDiscoveryService.Correlate(Guid.NewGuid(), [arc], DateTimeOffset.UtcNow));
         Assert.Equal(MachineKind.ArcServer, machine.Kind);
-        Assert.All(machine.AccessPaths, path => Assert.Equal(ReadinessState.MissingPrerequisite, path.Readiness));
+        Assert.All(machine.AccessPaths, path => Assert.Equal(ReadinessState.InteractionRequired, path.Readiness));
     }
 
     [Fact]
