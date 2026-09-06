@@ -88,8 +88,12 @@
       <!-- ============================================================ MACHINES: the landing screen -->
       <TabItem Header="▤  Machines">
         <Grid>
-          <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="30,24,30,20" Spacing="14">
+          <!-- Three bands rather than one long scrolling column: what is above the table, the table
+               itself, and what is below it. Only the middle one takes the leftover height, so the
+               machine list grows and shrinks with the window instead of the whole page scrolling. -->
+          <Grid RowDefinitions="Auto,*,Auto" Margin="30,24,30,20" RowSpacing="14">
+            <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="14">
 
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="24">
                 <StackPanel Spacing="6">
@@ -221,9 +225,17 @@
                   </Grid>
                 </StackPanel>
               </Border>
+            </StackPanel>
+            </ScrollViewer>
 
-              <Border Classes="panel" Padding="0" IsVisible="{Binding HasMachines}">
-                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+              <!-- Fills whatever height the window leaves and scrolls inside itself. The list used
+                   to grow to its content with the page scrolling instead, so a long estate pushed
+                   everything else off screen and the table never got a scrollbar of its own. The
+                   bottom padding reserves room for the horizontal scrollbar, which otherwise sits
+                   on top of the last row — with a single machine, on top of the only row. -->
+              <Border Grid.Row="1" Classes="panel" Padding="0" IsVisible="{Binding HasMachines}" MinHeight="140">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                              Padding="0,0,0,14">
                   <Grid RowDefinitions="Auto,*" MinWidth="1020">
                     <!-- Header and rows share one column definition so they always line up. -->
                     <Grid Grid.Row="0" ColumnDefinitions="36,2*,80,90,150,150,120,130,90,190"
@@ -239,14 +251,13 @@
                       <TextBlock Grid.Column="8" Classes="column-header" Text="ACCOUNT" Margin="6,8" />
                       <TextBlock Grid.Column="9" Classes="column-header" Text="" Margin="6,8" />
                     </Grid>
-                    <!-- No height cap and no scrolling of its own: the list grows to its content and
-                         the page's scroll viewer moves the whole screen. A capped list inside a
-                         scrolling page produced two nested scroll regions, and on a short window
-                         the table was clipped to a single visible row. -->
-                    <ListBox Grid.Row="1" Classes="estate-list"
+                    <!-- The list scrolls itself, so a long estate stays inside the table instead of
+                         pushing the rest of the screen away. The right padding keeps rows clear of
+                         the vertical scrollbar, which draws over the content rather than beside it. -->
+                    <ListBox Grid.Row="1" Classes="estate-list" Padding="0,0,14,0"
                              ItemsSource="{Binding Machines}" SelectedItem="{Binding SelectedMachine}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
                              AutomationProperties.Name="Discovered machines">
                       <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:MachineRow">
@@ -286,6 +297,12 @@
                 </ScrollViewer>
               </Border>
 
+
+            <!-- Capped and scrollable, so selecting a machine or queuing a change can never squeeze
+                 the table it was selected from down to nothing. -->
+            <ScrollViewer Grid.Row="2" MaxHeight="320"
+                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="14">
 
               <Border Classes="panel" IsVisible="{Binding SelectedMachine, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
                 <StackPanel Spacing="8">
@@ -333,8 +350,9 @@
                   </StackPanel>
                 </StackPanel>
               </Border>
-            </StackPanel>
-          </ScrollViewer>
+              </StackPanel>
+            </ScrollViewer>
+          </Grid>
 
           <!-- Account picker. Shown only for an unpinned machine, and only ever a choice from the
                stored list — credentials are never typed at connect time. -->
