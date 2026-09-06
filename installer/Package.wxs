@@ -39,12 +39,18 @@
          locked files, which surfaces as a files-in-use prompt or a demand to reboot. Close the
          application first; the operator is asked before this happens in the in-app path, and the
          finish dialog offers to start it again. -->
+    <!-- Asking politely is not enough on its own. Stagecoach deliberately refuses an ordinary close
+         while sessions are running — it hides to the notification area instead — so a close message
+         alone left the old copy running and the upgrade replacing files underneath it. Ask first,
+         then end it, which is what an upgrade requires. The in-app update path warns about live
+         sessions before it ever gets here. -->
     <util:CloseApplication
       Id="CloseRunningStagecoach"
       Target="Stagecoach.App.exe"
       Description="Stagecoach must close before it can be updated."
       CloseMessage="yes"
       ElevatedCloseMessage="yes"
+      TerminateProcess="0"
       RebootPrompt="no"
       Timeout="20" />
 
