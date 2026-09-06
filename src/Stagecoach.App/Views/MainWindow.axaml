@@ -306,7 +306,15 @@
 
               <Border Classes="panel" IsVisible="{Binding SelectedMachine, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
                 <StackPanel Spacing="8">
-                  <TextBlock Classes="screen-eyebrow" Text="SELECTED MACHINE" />
+                  <!-- Selecting a machine opens this panel over the bottom of the screen, and there
+                       was no way to put it away again short of restarting: the list stayed shrunk
+                       for as long as anything was selected. -->
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="screen-eyebrow" Text="SELECTED MACHINE" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Content="✕  Close" Padding="10,4"
+                            Command="{Binding ClearSelectedMachineCommand}"
+                            AutomationProperties.Name="Close the selected machine panel" />
+                  </Grid>
                   <TextBlock Text="{Binding SelectedMachine.Name}" FontSize="{StaticResource StageFontSize20}" />
                   <TextBlock Text="{Binding SelectedMachine.Tenant, StringFormat='Tenant  {0}'}" Opacity="0.75" />
                   <TextBlock Text="{Binding SelectedMachine.Subscription, StringFormat='Subscription  {0}'}" Opacity="0.75" />

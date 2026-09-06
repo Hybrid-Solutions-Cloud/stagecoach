@@ -540,6 +540,18 @@ public partial class MainViewModel : ObservableObject
         });
     }
 
+    /// <summary>
+    /// Puts the selected-machine panel away and gives its space back to the table. Selecting a
+    /// machine used to be a one-way door: the panel stayed open, and the list stayed shrunk, with
+    /// nothing on screen to dismiss it.
+    /// </summary>
+    [RelayCommand]
+    private void ClearSelectedMachine()
+    {
+        SelectedMachine = null;
+        PendingRemediation = null;
+    }
+
     [RelayCommand]
     private void ResetFilters()
     {
