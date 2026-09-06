@@ -245,6 +245,11 @@ public partial class App : Application
         }
 
         show.Click += (_, _) => Show();
+
+        // Launching Stagecoach again — from the Start menu, the desktop, or the installer's finish
+        // dialog — brings this window forward rather than starting a second copy. The signal arrives
+        // on a background thread, so the window is raised on the interface thread.
+        SingleInstance.ListenForActivation(() => Dispatcher.UIThread.Post(Show));
         _trayIcon.Clicked += (_, _) => Show();
         sessions.Click += (_, _) =>
         {
